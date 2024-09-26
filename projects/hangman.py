@@ -11,6 +11,9 @@ class Hangman(object):
         self.number_of_matching_chars = 0
         self._errors_until_fail = 5
 
+    def __str__(self):
+        return f"{self.number_of_errors} errors out of {self.number_of_tries} tries"
+
     def print_output_string(self):
         # Denna funktion loopar över index i listan
         my_string = ""
@@ -75,7 +78,10 @@ def continue_playing():
     input_string = input("Om du vill spela igen skriv ja och i annat fall nej: ")
     if input_string.lower() == "ja":
         return True
+    elif input_string.lower() == "nej":
+        return False
     else:
+        print("Felaktigt svar, spelet avslutas!")
         return False
 
 
@@ -86,6 +92,7 @@ def run():
     hangman.draw_man(True)
     hint = f"({hangman.word})" if debug is True else ""
 
+    print(f"Välkommen till hangman")
     print(f"Gissa ordet. Du får ange an bokstav i taget mellan A-Ö. Gemener eller versaler spelar ingen roll")
     print(f"Ordet har {len(hangman.word)} bokstäver {hint}")
 
