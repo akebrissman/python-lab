@@ -16,26 +16,23 @@ class LocationData:
         self.locations_df = None
         self.features_df = None
         self.target_df = None
-        self.data = None
-        self.target = None
-        self.X_train = None
-        self.X_test = None
-        self.y_train = None
-        self.y_test = None
+
+        self.features_X_train = None
+        self.features_X_test = None
+        self.labels_y_train = None
+        self.labels_y_test = None
+
         self.number_of_rows = 0
         self.number_of_features = 0
         self.number_of_output_categories = 0
-        self.feature_matrix = None
-        self.preprocessor = None
         self.normalization_constant = 1
 
     def is_loaded(self):
         return True if self.number_of_rows > 0 else False
 
-    def load(self):
+    def load(self, file_name="location_training_data.csv"):
         try:
             # Load data from csv file
-            file_name = "location_training_data.csv"
             current_directory = os.path.dirname(__file__)
             file_path = os.path.join(current_directory, file_name)
             self.locations_df = pd.read_csv(file_path, delimiter=';', decimal=',')
@@ -46,50 +43,52 @@ class LocationData:
             self.features_df = self.locations_df[["payed_parking", "apartments", "apartment_age"]]
             self.target_df = self.locations_df["rank"]
 
-            print(f"{len(self.locations_df)} lines of data were loaded successfully. ")
+            # self.number_of_rows = len(self.features_df)
+            # self.number_of_features = len(self.features_df.columns)
+            self.number_of_rows = self.features_df.shape[0]
+            self.number_of_features = self.features_df.shape[1]
+            self.number_of_output_categories = 3  # BRA(0), MEDEL(1), DÅLIG(2) TODO: skapa enum
+
+            print(f"Data laddat \nAntal datapunkter {len(self.locations_df)}")
         except Exception as e:
+            print("Fel vid inläsning av data")
             print(e)
 
     def preprocess(self):
-        # Preprocessing dataframe:
-        # self.number_of_rows = len(self.features_df)
-        # self.number_of_features = len(self.features_df.columns)
+        try:
+            # Preprocessing dataframe:
+            features_X = self.features_df.to_numpy()
+            labels_y = self.target_df.to_numpy()
 
-        self.number_of_rows = self.features_df.shape[0]
-        self.number_of_features = self.features_df.shape[1]
-        self.number_of_output_categories = 3  # BRA(0), MEDEL(1), DÅLIG(2) TODO: skapa enum
+            # Dela upp data i 20% testdata, 80% träningsdata
+            train_test_split_data = train_test_split(features_X, labels_y, test_size=0.2, random_state=42)
 
-        self.data = self.features_df.to_numpy()
-        self.target = self.target_df.to_numpy()
+            # X är features, y är labels (korrekt output/prediction för det datat)
+            features_X_train = train_test_split_data[0]  # Träningsdata
+            features_X_test = train_test_split_data[1]  # Testdata
+            labels_y_train = train_test_split_data[2]  # Tränings-labels
+            labels_y_test = train_test_split_data[3]  # Test-labels
+            # Samma som:
+            # features_X_train, features_X_test, labels_y_train, labels_y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-        X, y = self.data, self.target
+            # Normalisera indata
+            # Viktigt för att få alla features i samma skala
+            # TODO: Use lines below when the model works fine. ChatGPT tycker att man skall dela både train och test med features_X_train
+            self.normalization_constant = np.max(features_X_train)
+            self.features_X_train = features_X_train  # / self.normalization_constant
+            self.features_X_test = features_X_test  # / self.normalization_constant
 
-        # Dela upp datan i 20% testdata, 80% träningsdata
-        train_test_split_data = train_test_split(X, y, test_size=0.2, random_state=42)
+            # Konvertera etiketter till one-hot encoding
+            # Nödvändigt för fler flerklass-klassificering
+            self.labels_y_train = tf.keras.utils.to_categorical(labels_y_train)
+            self.labels_y_test = tf.keras.utils.to_categorical(labels_y_test)
 
-        # X är datat, y är labels (korrekt output/prediction för det datan)
-        X_train = train_test_split_data[0]  # Träningsdata
-        X_test = train_test_split_data[1]  # Testdata
-        y_train = train_test_split_data[2]  # Tränings-labels
-        y_test = train_test_split_data[3]  # Test-labels
-        # Samma som:
-        # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-        # Normalisera indata
-        # Viktigt för att få alla features i samma skala
-        # TODO: Use lines below when the model works fine. ChatGPT tycker att man skall dela både train och test med X_train
-        self.normalization_constant = np.max(X_train)
-        self.X_train = X_train  # / np.max(X_train)
-        self.X_test = X_test  # / np.max(X_test)
-
-        # Konvertera etiketter till one-hot encoding
-        # Nödvändigt för fler flerklass-klassificering
-        self.y_train = tf.keras.utils.to_categorical(y_train)
-        self.y_test = tf.keras.utils.to_categorical(y_test)
-
-        print("Data preprocessed successfully.")
-        print(f"Längd på träningsdata {len(X_train)}, maxvalue {np.max(X_train)} ")
-        print(f"Längd på testdata {len(X_test)}, maxvalue {np.max(X_test)} ")
+            print("Data förberett för träning")
+            print(f"Antal datapunkter träningsdata {len(features_X_train)}, Max-värde {np.max(features_X_train)} ")
+            print(f"Antal datapunkter testdata {len(features_X_test)}, Max-värde {np.max(features_X_test)} ")
+        except Exception as e:
+            print("Fel vid förberedelse av data")
+            print(e)
 
 
 class UserData:
@@ -145,7 +144,7 @@ class ClassificationModel:
 
     def setup(self):
         # Skapa en enkel sekventiell modell.
-        # Linjär stack av lager, passar detta relativt simpla klassificierings-problemet.
+        # Linjär stack av lager, passar detta relativt simpla klassificerings-problemet.
         # Grundläggande typ av neural network, varje lager kopplat till nästa
         # Input-Layer: Specificera input-shape = antal features för varje blomma, d.v.s datats dimension = 4
         # Hidden Layer 1: 10 noder per lager, bestäms efter experimentering
@@ -192,12 +191,12 @@ class ClassificationModel:
         target_accuracy = 0.80
         num_epochs = 50
         while True:
-            result = self.model.fit(self.location_data.X_train,
-                                          self.location_data.y_train,
-                                          validation_data=(self.location_data.X_test, self.location_data.y_test),
-                                          epochs=num_epochs,
-                                          callbacks=[early_stopping],
-                                          verbose=verbose)
+            result = self.model.fit(self.location_data.features_X_train,
+                                    self.location_data.labels_y_train,
+                                    validation_data=(self.location_data.features_X_test, self.location_data.labels_y_test),
+                                    epochs=num_epochs,
+                                    callbacks=[early_stopping],
+                                    verbose=verbose)
 
             accuracy = result.history["accuracy"][-1]
             val_accuracy = result.history['val_accuracy'][-1]
@@ -248,18 +247,20 @@ class ClassificationModel:
         plt.show()
 
     def evaluate(self):
-        # Utvärdera modellen på testdata
-        test_loss, test_acc = self.model.evaluate(self.location_data.X_test, self.location_data.y_test, verbose=2)
+        # Utvärdera modellen med hjälp av testdata
+        test_loss, test_acc = self.model.evaluate(self.location_data.features_X_test,
+                                                  self.location_data.labels_y_test,
+                                                  verbose=2)
         print(f'Test Accuracy: {test_acc}, Test Loss {test_loss}')
 
         # Gör prediktioner på några exempel
-        sample_predictions = self.model.predict(self.location_data.X_test[:3], verbose=1)
+        sample_predictions = self.model.predict(self.location_data.features_X_test[:3], verbose=1)
         print("\nSample predictions:")
         for i, prediction in enumerate(sample_predictions):
             print(f"Example {i + 1}: {prediction}")
             print(f"Predicted class: {np.argmax(prediction)}")
-            print(f"Actual class: {np.argmax(self.location_data.y_test[i])}")
-            print(f"Result: {np.argmax(self.location_data.y_test[i]) == np.argmax(prediction)}")
+            print(f"Actual class: {np.argmax(self.location_data.labels_y_test[i])}")
+            print(f"Result: {np.argmax(self.location_data.labels_y_test[i]) == np.argmax(prediction)}")
             print()
 
     def get_rank(self, user_preferences: UserData):
@@ -331,61 +332,19 @@ class UserInterface:
                 break
 
 
-def main():
+def all_in_sequence(location_data, rank_model):
     # Load and prepare Location data
-    location_data = LocationData()
+    # location_data = LocationData()
     location_data.load()
     location_data.preprocess()
 
     # Initialize and train the model
-    rank_model = ClassificationModel(location_data)
+    # rank_model = ClassificationModel(location_data)
     rank_model.setup()
     rank_model.train(verbose=1)
     rank_model.save('rank_model.keras')
 
     rank_model.evaluate()
-    # rank_model.evaluation_graph()
-
-    # rank_model.get_rank(1,1,1)
-
-    # Ask the user for data
-    user_data = UserData()
-
-    # Run the user interface
-    ui = UserInterface(rank_model, user_data)
-    ui.run()
-
-
-def use_existing_model():
-    rank_model = ClassificationModel()
-    rank_model.load('rank_model.keras')
-    user_data = UserData()
-
-    # Run the user interface
-    ui = UserInterface(rank_model, user_data)
-    ui.run()
-
-
-def menu_load_data(location_data):
-    location_data.load()
-    location_data.preprocess()
-
-
-def menu_setup_model(rank_model):
-    # Initialize and train the model
-    rank_model.setup()
-
-
-def menu_train_model(rank_model):
-    rank_model.train(verbose=1)
-
-
-def menu_save_model(rank_model):
-    rank_model.save('rank_model.keras')
-
-
-def menu_load_model(rank_model):
-    rank_model.load('rank_model.keras')
 
 
 def main_menu():
@@ -409,23 +368,26 @@ def main_menu():
         choice = input("Välj ett alternativ: ")
         print("============================")
         if choice == '1':
-            menu_load_data(location_data)
+            location_data.load()
+            location_data.preprocess()
         elif choice == '2':
-            menu_setup_model(rank_model)
+            rank_model.setup()
         elif choice == '3':
-            menu_train_model(rank_model)
+            rank_model.train(verbose=1)
         elif choice == '4':
             rank_model.evaluate()
         elif choice == '5':
             rank_model.evaluation_graph()
         elif choice == '6':
-            menu_save_model(rank_model)
+            rank_model.save('rank_model.keras')
         elif choice == '8':
-            menu_load_model(rank_model)
+            rank_model.load('rank_model.keras')
         elif choice == '9':
             # Run the user interface
             ui = UserInterface(rank_model, user_data)
             ui.run()
+        elif choice == 'all':
+            all_in_sequence(location_data, rank_model)
         elif choice == '0':
             print("Avslutar programmet.")
             break
