@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.models import load_model
 
@@ -56,32 +58,37 @@ class LocationData:
 
     def preprocess(self):
         try:
-            # Preprocessing dataframe:
-            features_X = self.features_df.to_numpy()
-            labels_y = self.target_df.to_numpy()
+            # Koda kategoriska variabler
+            # label_encoder = LabelEncoder()
+            # self.features_df['sign'] = label_encoder.fit_transform(self.features_df['sign'])
+            # self.target_df = label_encoder.fit_transform(self.target_df)
+
+            #  Normalisera numeriska features
+            scaler = MinMaxScaler()
+            self.features_df = scaler.fit_transform(self.features_df)
+            # self.normalization_constant = np.max(features_X_train)
+            # self.features_X_train = features_X_train  # / self.normalization_constant
+            # self.features_X_test = features_X_test  # / self.normalization_constant
 
             # Dela upp data i 20% testdata, 80% träningsdata
-            train_test_split_data = train_test_split(features_X, labels_y, test_size=0.2, random_state=42)
+            train_test_split_data = train_test_split(self.features_df, self.target_df, test_size=0.2, random_state=42)
 
-            # X är features, y är labels (korrekt output/prediction för det datat)
+            # X är features, y är labels
             features_X_train = train_test_split_data[0]  # Träningsdata
             features_X_test = train_test_split_data[1]  # Testdata
             labels_y_train = train_test_split_data[2]  # Tränings-labels
             labels_y_test = train_test_split_data[3]  # Test-labels
-            # Samma som:
-            # features_X_train, features_X_test, labels_y_train, labels_y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-
-            # Normalisera indata
-            # Viktigt för att få alla features i samma skala
-            # TODO: Use lines below when the model works fine. ChatGPT tycker att man skall dela både train och test med features_X_train
-            self.normalization_constant = np.max(features_X_train)
-            self.features_X_train = features_X_train  # / self.normalization_constant
-            self.features_X_test = features_X_test  # / self.normalization_constant
 
             # Konvertera etiketter till one-hot encoding
             # Nödvändigt för fler flerklass-klassificering
+            # Kategori 0 blir[1, 0, 0]
+            # Kategori 1 blir[0, 1, 0]
+            # Kategori 2 blir[0, 0, 1]
             self.labels_y_train = tf.keras.utils.to_categorical(labels_y_train)
             self.labels_y_test = tf.keras.utils.to_categorical(labels_y_test)
+
+            self.features_X_train = features_X_train
+            self.features_X_test = features_X_test
 
             print("Data förberett för träning")
             print(f"Antal datapunkter träningsdata {len(features_X_train)}, Max-värde {np.max(features_X_train)} ")
@@ -143,10 +150,9 @@ class ClassificationModel:
         self.is_trained = False
 
     def setup(self):
-        # Skapa en enkel sekventiell modell.
-        # Linjär stack av lager, passar detta relativt simpla klassificerings-problemet.
+        # Skapar en enkel sekventiell modell, en linjär stack av lager för detta klassificerings-problem.
         # Grundläggande typ av neural network, varje lager kopplat till nästa
-        # Input-Layer: Specificera input-shape = antal features för varje blomma, d.v.s datats dimension = 4
+        # Input-Layer: Specificera input-shape = antal features för varje datapunkt, d.v.s antal kolumner
         # Hidden Layer 1: 10 noder per lager, bestäms efter experimentering
         # Hidden Layer 2: Fler lager, mer kapacitet att lära sig
         # Output Layer: Sista lagret har lika många noder som antalet target-klasser,
@@ -168,18 +174,27 @@ class ClassificationModel:
     def train(self, verbose=1):
         # Verbosity mode: 0 = silent, 1 = progress bar, 2 = one line per epoch.
         """ Tolkning av verbose output:
-            accuracy: 0.3421: Detta är träningsnoggrannheten för denna epoch. Här är det 34.21%, vilket innebär att modellen korrekt klassificerade 34.21% av träningsdata.
-            loss: 2.8861: Detta är förlustvärdet (loss) för modellen under träningen. Lägre värden indikerar bättre prestanda. Det här värdet är relativt högt, vilket tyder på att modellen har svårt att göra korrekta förutsägelser.
-            val_accuracy: 0.3000: Detta är noggrannheten på valideringsdatasetet, vilket är 30%. Detta värde används för att utvärdera hur bra modellen generaliserar på osedd data.
-            val_loss: 2.7057: Detta är förlustvärdet på valideringsdatasetet. Även här, ju lägre, desto bättre.
+            accuracy: Detta är träningsnoggrannheten för denna epoch. T ex 0.3421 (34.21%),
+              vilket innebär att modellen korrekt klassificerade 34.21% av träningsdata.
+            loss: Detta är förlustvärdet (loss) för modellen under träningen.
+              Lägre värden indikerar bättre prestanda. T ex 2.8861 är relativt högt,
+              vilket tyder på att modellen har svårt att göra korrekta förutsägelser.
+            val_accuracy: Detta är noggrannheten på valideringsdatasetet. T ex 0.3000 (30%).
+            Detta värde används för att utvärdera hur bra modellen generaliserar på osedd data.
+            val_loss: Detta är förlustvärdet på valideringsdatasetet. T ex 2.7057, ju lägre, desto bättre.
+
             Riktvärden för att tolka resultaten:
-            Accuracy: Generellt sett, om noggrannheten över 70% kan anses vara acceptabelt, beroende på problemet. För mer komplexa problem kan man behöva över 80%. I ditt fall är 34.21% och 30% relativt låga.
-            Loss: Ett förlustvärde under 1.0 är ofta en bra indikator, men det beror på vilken typ av problem du arbetar med. Ju lägre, desto bättre."""
+            Accuracy: Generellt sett, om noggrannheten över 70% kan anses vara acceptabelt, beroende på problemet.
+              För mer komplexa problem kan man behöva över 80%. I detta fall är 34.21% och 30% relativt låga.
+            Loss: Ett förlustvärde under 1.0 är ofta en bra indikator,
+              men det beror på vilken typ av problem du arbetar med. Ju lägre, desto bättre.
+        """
         # self.history = self.model.fit(self.location_data.X_train,
         #                               self.location_data.y_train,
         #                               epochs=50,
         #                               validation_split=0.2,
         #                               verbose=verbose)
+
         early_stopping = EarlyStopping(
             monitor='val_loss',  # 'val_accuracy' eller 'val_loss'
             patience=10,  # antal epoker utan förbättring innan träningen stoppas
@@ -187,13 +202,14 @@ class ClassificationModel:
             restore_best_weights=True  # återställer vikterna till den bästa modellen
         )
 
-        # TODO: Kanske är bättre att använda 50% av träningsdatat än testdatat som representerar 20% av all data.
+        # TODO: Kanske är bättre att använda 50% av träningsdata än testdata som representerar 20% av all data.
         target_accuracy = 0.80
         num_epochs = 50
         while True:
             result = self.model.fit(self.location_data.features_X_train,
                                     self.location_data.labels_y_train,
-                                    validation_data=(self.location_data.features_X_test, self.location_data.labels_y_test),
+                                    validation_data=(self.location_data.features_X_test,
+                                                     self.location_data.labels_y_test),
                                     epochs=num_epochs,
                                     callbacks=[early_stopping],
                                     verbose=verbose)
@@ -223,11 +239,11 @@ class ClassificationModel:
 
         # Plot träningsnoggrannhet och valideringsnoggrannhet
         plt.subplot(1, 2, 1)
-        plt.plot(self.history['accuracy'], label='Training Accuracy')
-        plt.plot(self.history['val_accuracy'], label='Validation Accuracy')
-        plt.title('Model Accuracy')
+        plt.plot(self.history['accuracy'], label='Träningsnoggrannhet')
+        plt.plot(self.history['val_accuracy'], label='Valideringsnoggrannhet')
+        plt.title('Modellens noggrannhet')
         plt.xlabel('Epoch')
-        plt.ylabel('Accuracy')
+        plt.ylabel('Noggrannhet')
         plt.legend()
 
         # Plot träningsförlust och valideringsförlust
@@ -236,11 +252,11 @@ class ClassificationModel:
         # Om båda går nedåt under träning, lär sig modellen väl.
         # Om training loss går ner, men validation loss börjar gå upp, kan det indikera overfitting
         plt.subplot(1, 2, 2)
-        plt.plot(self.history['loss'], label='Training Loss')
-        plt.plot(self.history['val_loss'], label='Validation Loss')
-        plt.title('Model Loss')
+        plt.plot(self.history['loss'], label='Träningsförlust')
+        plt.plot(self.history['val_loss'], label='Valideringsförlust')
+        plt.title('Modellens förlust')
         plt.xlabel('Epoch')
-        plt.ylabel('Loss')
+        plt.ylabel('Förlust')
         plt.legend()
 
         plt.tight_layout()
@@ -264,11 +280,13 @@ class ClassificationModel:
             print()
 
     def get_rank(self, user_preferences: UserData):
-        values = np.array(
+        scaler = MinMaxScaler()
+        data_to_predict = np.array(
             [[user_preferences.payed_parking, user_preferences.apartments, user_preferences.apartment_age]])
-        normalized_data = values / self.normalization_constant
-        prediction = self.model.predict(normalized_data)
-        return np.argmax(prediction)  # Index with the highest value
+        # normalized_data = values / self.normalization_constant
+        normalized_data = scaler.transform(data_to_predict)
+        predictions = self.model.predict(normalized_data)
+        return np.argmax(predictions)  # Index with the highest value
 
     def save(self, file_name='model.h5'):
         file_type = file_name.split('.')[1]
@@ -290,6 +308,8 @@ class ClassificationModel:
                 f.create_dataset('normalization_constant', data=self.normalization_constant)
         else:
             print("Unknown file format")
+
+        print("Modellen sparad")
 
     def load(self, file_name="model.h5"):
         file_type = file_name.split('.')[1]
@@ -313,6 +333,8 @@ class ClassificationModel:
                 self.normalization_constant = f['normalization_constant'][()]
         else:
             print("Unknown file format")
+
+        print("Modellen laddad")
 
 
 class UserInterface:
