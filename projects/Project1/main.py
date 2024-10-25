@@ -1,16 +1,24 @@
 import json
 import os
+from enum import Enum
 
 import h5py
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.models import load_model
+
+
+class Classification(Enum):
+    GOOD = 0
+    MEDIUM = 1
+    BAD = 2
 
 
 class LocationData:
@@ -28,6 +36,7 @@ class LocationData:
         self.number_of_features = 0
         self.number_of_output_categories = 0
         self.normalization_constant = 1
+        self.scaler = MinMaxScaler()
 
     def is_loaded(self):
         return True if self.number_of_rows > 0 else False
@@ -49,7 +58,7 @@ class LocationData:
             # self.number_of_features = len(self.features_df.columns)
             self.number_of_rows = self.features_df.shape[0]
             self.number_of_features = self.features_df.shape[1]
-            self.number_of_output_categories = 3  # BRA(0), MEDEL(1), DÅLIG(2) TODO: skapa enum
+            self.number_of_output_categories = len(Classification)  # GOOD(0), MEDIUM(1), BAD(2)
 
             print(f"Data laddat \nAntal datapunkter {len(self.locations_df)}")
         except Exception as e:
@@ -64,8 +73,7 @@ class LocationData:
             # self.target_df = label_encoder.fit_transform(self.target_df)
 
             #  Normalisera numeriska features
-            scaler = MinMaxScaler()
-            self.features_df = scaler.fit_transform(self.features_df)
+            self.features_df = self.scaler.fit_transform(self.features_df)
             # self.normalization_constant = np.max(features_X_train)
             # self.features_X_train = features_X_train  # / self.normalization_constant
             # self.features_X_test = features_X_test  # / self.normalization_constant
@@ -147,6 +155,7 @@ class ClassificationModel:
         self.model: tf.keras.models.Sequential = None
         self.history = None
         self.normalization_constant = location_data.normalization_constant if location_data else 1
+        self.scaler = location_data.scaler if location_data else None
         self.is_trained = False
 
     def setup(self):
@@ -280,19 +289,20 @@ class ClassificationModel:
             print()
 
     def get_rank(self, user_preferences: UserData):
-        scaler = MinMaxScaler()
         data_to_predict = np.array(
             [[user_preferences.payed_parking, user_preferences.apartments, user_preferences.apartment_age]])
         # normalized_data = values / self.normalization_constant
-        normalized_data = scaler.transform(data_to_predict)
+        normalized_data = self.scaler.transform(data_to_predict)
         predictions = self.model.predict(normalized_data)
-        return np.argmax(predictions)  # Index with the highest value
+        return Classification(np.argmax(predictions))  # Index with the highest value is the enum value
 
     def save(self, file_name='model.h5'):
         file_type = file_name.split('.')[1]
         if file_type == "keras":
             # Spara modellen i keras-format
             self.model.save(file_name)
+            # Spara scaler
+            joblib.dump(self.scaler, 'minmax_scaler.pkl')
             # Spara normaliseringskonstanten
             with open('normalization_config.json', 'w') as f:
                 json.dump({'normalization_constant': self.normalization_constant}, f)
@@ -317,6 +327,8 @@ class ClassificationModel:
             # Ladda modellen
             self.model = load_model(file_name)
             self.is_trained = True
+            # Ladda scaler
+            self.scaler = joblib.load('minmax_scaler.pkl')
             # Ladda normaliseringskonstanten
             with open('normalization_config.json', 'r') as f:
                 config = json.load(f)
@@ -348,7 +360,7 @@ class UserInterface:
         while True:
             self.user_data.get_user_input()
             rank = self.recommendation_model.get_rank(self.user_data)
-            print(rank)
+            print(rank.name)
             exit_loop = input(f"\nDo you want to exit (y/n)")
             if exit_loop.lower() == "y":
                 break
