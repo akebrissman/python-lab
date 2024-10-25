@@ -3,13 +3,13 @@ import os
 from enum import Enum
 
 import h5py
+import joblib
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-import joblib
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
+# from sklearn.preprocessing import LabelEncoder
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.models import load_model
@@ -113,40 +113,39 @@ class UserData:
         self.apartment_age = 0
 
     def get_user_input(self):
-
         while True:
             try:
-                value = float(input(f"Please enter payed parking value (0-10): "))
+                value = float(input(f"Parkeringsavgift: (0-10): "))
                 if 0 <= value <= 100:
                     self.payed_parking = value
                     break
                 else:
-                    print("Please enter a number between 1 and 5.")
+                    print("Ange ett nummer mellan 1 och 5.")
             except ValueError:
-                print("Please enter a valid number.")
+                print("Ange ett giltigt nummer!")
 
         while True:
             try:
-                value = float(input(f"Please enter number of apartments (1-5): "))
+                value = float(input(f"Antal lägenheter: (1-5): "))
                 if 0 <= value <= 100:
                     self.apartments = value
                     break
                 else:
-                    print("Please enter a number between 1 and 5.")
+                    print("Ange ett nummer mellan 1 och 5.")
             except ValueError:
-                print("Please enter a valid number.")
+                print("Ange ett giltigt nummer!")
 
         while True:
             try:
-                value = float(input(f"Please enter apartment age value (1-5): "))
+                value = float(input(f"Lägenheternas ålder: (1-5): "))
                 if 0 <= value <= 100:
                     self.apartment_age = value
                     break
                 else:
-                    print("Please enter a number between 1 and 5.")
+                    print("Ange ett nummer mellan 1 och 5.")
 
             except ValueError:
-                print("Please enter a valid number.")
+                print("Ange ett giltigt nummer!")
 
 
 class ClassificationModel:
@@ -189,7 +188,7 @@ class ClassificationModel:
               Lägre värden indikerar bättre prestanda. T ex 2.8861 är relativt högt,
               vilket tyder på att modellen har svårt att göra korrekta förutsägelser.
             val_accuracy: Detta är noggrannheten på valideringsdatasetet. T ex 0.3000 (30%).
-            Detta värde används för att utvärdera hur bra modellen generaliserar på osedd data.
+              Detta värde används för att utvärdera hur bra modellen generaliserar på osedd data.
             val_loss: Detta är förlustvärdet på valideringsdatasetet. T ex 2.7057, ju lägre, desto bättre.
 
             Riktvärden för att tolka resultaten:
@@ -211,34 +210,40 @@ class ClassificationModel:
             restore_best_weights=True  # återställer vikterna till den bästa modellen
         )
 
-        # TODO: Kanske är bättre att använda 50% av träningsdata än testdata som representerar 20% av all data.
         target_accuracy = 0.80
         num_epochs = 50
         while True:
+            # Dela upp träningsdatat i 80% träningsdata och 20% valideringsdata
             result = self.model.fit(self.location_data.features_X_train,
                                     self.location_data.labels_y_train,
-                                    validation_data=(self.location_data.features_X_test,
-                                                     self.location_data.labels_y_test),
+                                    validation_split=0.2,
                                     epochs=num_epochs,
                                     callbacks=[early_stopping],
                                     verbose=verbose)
 
-            accuracy = result.history["accuracy"][-1]
-            val_accuracy = result.history['val_accuracy'][-1]
+            validation_accuracy = result.history['val_accuracy'][-1]
+            training_accuracy = result.history["accuracy"][-1]
             self.history = result.history
 
             print("")
-            print(f"Acceptabel valideringsnoggrannhet {target_accuracy:.2f} \n"
-                  f"Valideringsnoggrannhet {val_accuracy:.2f} \n"
-                  f"Noggrannhet {accuracy:.2f}")
+            print(f"Acceptabel valideringsnoggrannhet {target_accuracy:.0%} \n"
+                  f"Valideringsnoggrannhet {validation_accuracy:.2%} \n"
+                  f"Träningsnoggrannhet {training_accuracy:.2%}  \n")
 
-            if val_accuracy >= target_accuracy:
+            # TODO: Skall man testa mot validation_accuracy eller training_accuracy?
+            if validation_accuracy >= target_accuracy:
                 self.is_trained = True
                 break
             else:
                 # Gör justeringar här, t ex, ändra hyperparametrar eller öka data
                 # target_accuracy -= 0.10
                 print("För dåligt, kör igen")
+
+        print("Valideringsnoggrannhet (val_accuracy): Mått på hur bra modellen generaliserar till nya, osedda data.")
+        print("Dvs hur många procent av valideringsdata (osedd data) som modellen klassificerar korrekt")
+        print("")
+        print("Träningsnoggrannhet (accuracy): Mått på hur bra modellen lär sig från träningsdata.")
+        print("Dvs hur många procent av träningsdata som modellen klassificerade korrekt.")
 
         print(f"Model trained successfully.")
 
@@ -276,7 +281,11 @@ class ClassificationModel:
         test_loss, test_acc = self.model.evaluate(self.location_data.features_X_test,
                                                   self.location_data.labels_y_test,
                                                   verbose=2)
-        print(f'Test Accuracy: {test_acc}, Test Loss {test_loss}')
+        print("Modellens utvärdering genom testdata")
+        print(f'Testnoggrannhet: {test_acc:.2%}')
+        print(f'Testförlust {test_loss:.2%} dvs hur "säkra" var dessa förutsägelser.')
+        if test_loss > .2:
+            print("VARNING, Testförlusten indikerar låg säkerhet och potentiellt problematiska förutsägelser.")
 
         # Gör prediktioner på några exempel
         sample_predictions = self.model.predict(self.location_data.features_X_test[:3], verbose=1)
@@ -350,84 +359,74 @@ class ClassificationModel:
 
 
 class UserInterface:
-    def __init__(self, recommendation_model, user_data):
-        self.recommendation_model = recommendation_model
-        self.user_data = user_data
+    def __init__(self):
+        self.location_data = LocationData()
+        self.rank_model = ClassificationModel(self.location_data)
+        self.user_data = UserData()
 
-    def run(self):
-        print("Welcome to the Location Rank predictor!")
-
+    def user_input(self):
         while True:
             self.user_data.get_user_input()
-            rank = self.recommendation_model.get_rank(self.user_data)
+            rank = self.rank_model.get_rank(self.user_data)
             print(rank.name)
             exit_loop = input(f"\nDo you want to exit (y/n)")
             if exit_loop.lower() == "y":
                 break
 
+    def all_in_sequence(self):
+        self.location_data.load()
+        self.location_data.preprocess()
 
-def all_in_sequence(location_data, rank_model):
-    # Load and prepare Location data
-    # location_data = LocationData()
-    location_data.load()
-    location_data.preprocess()
+        self.rank_model.setup()
+        self.rank_model.train(verbose=1)
+        self.rank_model.save('rank_model.keras')
 
-    # Initialize and train the model
-    # rank_model = ClassificationModel(location_data)
-    rank_model.setup()
-    rank_model.train(verbose=1)
-    rank_model.save('rank_model.keras')
+        self.rank_model.evaluate()
 
-    rank_model.evaluate()
+    def main_menu(self):
+        print("Välkommen till Location Rank predictor!")
 
+        while True:
+            print("\n==============================")
+            print("Ange funktion:")
+            print("1. Ladda data för träning")
+            print("2. Skapa modell") if self.location_data.is_loaded() else None
+            print("3. Träna modell") if self.rank_model.model else None
+            print("4. Utvärdera modell") if self.rank_model.is_trained and self.location_data.is_loaded() else None
+            print("5. Visa graf") if self.rank_model.is_trained else None
+            print("6. Spara modell") if self.rank_model.is_trained else None
+            print("8. Ladda befintlig modell")
+            print("9. Klassificera") if self.rank_model.is_trained else None
+            print("0. Avsluta")
 
-def main_menu():
-    location_data = LocationData()
-    rank_model = ClassificationModel(location_data)
-    user_data = UserData()
-
-    while True:
-        print("\n============================")
-        print("Ange funktion:")
-        print("1. Ladda data för träning")
-        print("2. Skapa modell") if location_data.is_loaded() else None
-        print("3. Träna modell") if rank_model.model else None
-        print("4. Utvärdera modell") if rank_model.is_trained and location_data.is_loaded() else None
-        print("5. Visa graf") if rank_model.is_trained else None
-        print("6. Spara modell") if rank_model.is_trained else None
-        print("8. Ladda befintlig modell")
-        print("9. Testa") if rank_model.is_trained else None
-        print("0. Avsluta")
-
-        choice = input("Välj ett alternativ: ")
-        print("============================")
-        if choice == '1':
-            location_data.load()
-            location_data.preprocess()
-        elif choice == '2':
-            rank_model.setup()
-        elif choice == '3':
-            rank_model.train(verbose=1)
-        elif choice == '4':
-            rank_model.evaluate()
-        elif choice == '5':
-            rank_model.evaluation_graph()
-        elif choice == '6':
-            rank_model.save('rank_model.keras')
-        elif choice == '8':
-            rank_model.load('rank_model.keras')
-        elif choice == '9':
-            # Run the user interface
-            ui = UserInterface(rank_model, user_data)
-            ui.run()
-        elif choice == 'all':
-            all_in_sequence(location_data, rank_model)
-        elif choice == '0':
-            print("Avslutar programmet.")
-            break
-        else:
-            print("Ogiltigt alternativ, försök igen.")
+            choice = input("Välj ett alternativ: ")
+            print("==============================\n")
+            if choice == '1':
+                self.location_data.load()
+                self.location_data.preprocess()
+            elif choice == '2':
+                self.rank_model.setup()
+            elif choice == '3':
+                self.rank_model.train(verbose=1)
+            elif choice == '4':
+                self.rank_model.evaluate()
+            elif choice == '5':
+                self.rank_model.evaluation_graph()
+            elif choice == '6':
+                self.rank_model.save('rank_model.keras')
+            elif choice == '8':
+                self.rank_model.load('rank_model.keras')
+            elif choice == '9':
+                self.user_input()
+            elif choice == 'all':
+                self.all_in_sequence()
+            elif choice == '0':
+                print("Avslutar programmet.")
+                break
+            else:
+                print("Ogiltigt alternativ, försök igen.")
 
 
 if __name__ == "__main__":
-    main_menu()
+    ui = UserInterface()
+    ui.main_menu()
