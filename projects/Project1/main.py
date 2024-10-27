@@ -15,10 +15,12 @@ from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.models import load_model
 
 
-class Classification(Enum):
-    GOOD = 0
-    MEDIUM = 1
-    BAD = 2
+class QualityRating(Enum):
+    EXCELLENT = 0
+    GOOD = 1
+    FAIR = 2
+    POOR = 3
+    BAD = 4
 
 
 class LocationData:
@@ -58,7 +60,13 @@ class LocationData:
             # self.number_of_features = len(self.features_df.columns)
             self.number_of_rows = self.features_df.shape[0]
             self.number_of_features = self.features_df.shape[1]
-            self.number_of_output_categories = len(Classification)  # GOOD(0), MEDIUM(1), BAD(2)
+            self.number_of_output_categories = len(QualityRating)  # EXCELLENT -- BAD
+
+            if len(self.target_df.unique()) < self.number_of_output_categories:
+                print(f"Det finns färre unika labels i datat än de {len(QualityRating)} som stöds")
+                self.number_of_output_categories = len(self.target_df.unique())
+            elif len(self.target_df.unique()) > self.number_of_output_categories:
+                print(f"Varning, Det finns fler unika labels i datat än de {len(QualityRating)} som stöds")
 
             print(f"Data laddat \nAntal datapunkter {len(self.locations_df)}")
         except Exception as e:
@@ -297,13 +305,13 @@ class ClassificationModel:
             print(f"Result: {np.argmax(self.location_data.labels_y_test[i]) == np.argmax(prediction)}")
             print()
 
-    def get_rank(self, user_preferences: UserData):
+    def rate(self, user_preferences: UserData):
         data_to_predict = np.array(
             [[user_preferences.payed_parking, user_preferences.apartments, user_preferences.apartment_age]])
         # normalized_data = values / self.normalization_constant
         normalized_data = self.scaler.transform(data_to_predict)
         predictions = self.model.predict(normalized_data)
-        return Classification(np.argmax(predictions))  # Index with the highest value is the enum value
+        return QualityRating(np.argmax(predictions))  # Index with the highest value is the enum value
 
     def save(self, file_name='model.h5'):
         file_type = file_name.split('.')[1]
@@ -361,14 +369,14 @@ class ClassificationModel:
 class UserInterface:
     def __init__(self):
         self.location_data = LocationData()
-        self.rank_model = ClassificationModel(self.location_data)
+        self.rating_model = ClassificationModel(self.location_data)
         self.user_data = UserData()
 
     def user_input(self):
         while True:
             self.user_data.get_user_input()
-            rank = self.rank_model.get_rank(self.user_data)
-            print(rank.name)
+            rating = self.rating_model.rate(self.user_data)
+            print(rating.name)
             exit_loop = input(f"\nDo you want to exit (y/n)")
             if exit_loop.lower() == "y":
                 break
@@ -377,26 +385,26 @@ class UserInterface:
         self.location_data.load()
         self.location_data.preprocess()
 
-        self.rank_model.setup()
-        self.rank_model.train(verbose=1)
-        self.rank_model.save('rank_model.keras')
+        self.rating_model.setup()
+        self.rating_model.train(verbose=1)
+        self.rating_model.save('model.keras')
 
-        self.rank_model.evaluate()
+        self.rating_model.evaluate()
 
     def main_menu(self):
-        print("Välkommen till Location Rank predictor!")
+        print("Välkommen till områdesklassificering!")
 
         while True:
             print("\n==============================")
             print("Ange funktion:")
             print("1. Ladda data för träning")
             print("2. Skapa modell") if self.location_data.is_loaded() else None
-            print("3. Träna modell") if self.rank_model.model else None
-            print("4. Utvärdera modell") if self.rank_model.is_trained and self.location_data.is_loaded() else None
-            print("5. Visa graf") if self.rank_model.is_trained else None
-            print("6. Spara modell") if self.rank_model.is_trained else None
+            print("3. Träna modell") if self.rating_model.model else None
+            print("4. Utvärdera modell") if self.rating_model.is_trained and self.location_data.is_loaded() else None
+            print("5. Visa graf") if self.rating_model.is_trained else None
+            print("6. Spara modell") if self.rating_model.is_trained else None
             print("8. Ladda befintlig modell")
-            print("9. Klassificera") if self.rank_model.is_trained else None
+            print("9. Klassificera") if self.rating_model.is_trained else None
             print("0. Avsluta")
 
             choice = input("Välj ett alternativ: ")
@@ -405,17 +413,17 @@ class UserInterface:
                 self.location_data.load()
                 self.location_data.preprocess()
             elif choice == '2':
-                self.rank_model.setup()
+                self.rating_model.setup()
             elif choice == '3':
-                self.rank_model.train(verbose=1)
+                self.rating_model.train(verbose=1)
             elif choice == '4':
-                self.rank_model.evaluate()
+                self.rating_model.evaluate()
             elif choice == '5':
-                self.rank_model.evaluation_graph()
+                self.rating_model.evaluation_graph()
             elif choice == '6':
-                self.rank_model.save('rank_model.keras')
+                self.rating_model.save('model.keras')
             elif choice == '8':
-                self.rank_model.load('rank_model.keras')
+                self.rating_model.load('model.keras')
             elif choice == '9':
                 self.user_input()
             elif choice == 'all':
