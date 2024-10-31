@@ -52,9 +52,16 @@ class LocationData:
 
             # Drop blank lines
             self.locations_df.dropna(how="all", inplace=True)
+            self.locations_df.dropna(inplace=True)
 
-            self.features_df = self.locations_df[["payed_parking", "apartments", "apartment_age"]]
-            self.target_df = self.locations_df["rank"]
+            # För att förbättra träningen så kan vi duplicera datat
+            self.locations_df = self.locations_df._append(self.locations_df, ignore_index=True)
+            self.locations_df = self.locations_df._append(self.locations_df, ignore_index=True)
+
+            self.features_df = self.locations_df[
+                ["Invånare", "Andel lägenheter", "Andel BRF", "Lägenhetsålder", "Medianinkomst", "Områdestyp",
+                 "Tidigt på plats", "Elbilspenetration", "Skyltning"]]
+            self.target_df = self.locations_df["Rating"]
 
             # self.number_of_rows = len(self.features_df)
             # self.number_of_features = len(self.features_df.columns)
@@ -76,11 +83,24 @@ class LocationData:
     def preprocess(self):
         try:
             # Koda kategoriska variabler
-            # label_encoder = LabelEncoder()
-            # self.features_df['sign'] = label_encoder.fit_transform(self.features_df['sign'])
-            # self.target_df = label_encoder.fit_transform(self.target_df)
+            # Klassificeringarna blir numeriska värden tagna från vår enum QualityRating
+            self.target_df = self.target_df.apply(lambda x: QualityRating[x].value)
 
-            #  Normalisera numeriska features
+            # TODO: Hur stor påverkan har det att minska stora värden t ex för Invånare?
+            # För att minska påverkan från "Invånare" divideras den med ett stort tal, som 10 000, innan MinMaxScaler.
+            # self.features_df['Invånare'] = self.features_df['Invånare'] / 10000
+            # self.features_df.loc[:, 'Invånare'] = self.features_df['Invånare'] / 10000
+            # self.features_df.loc[:, 'Medianinkomst'] = self.features_df['Medianinkomst'] / 10000
+            # self.features_df['Invånare'] = self.self.features_df['Invånare'].apply(lambda x: x/1000)
+            # self.features_df["Invånare"] = self.features_df.apply(lambda x: x["Invånare"]/1000)
+            for i in range(len(self.features_df)):
+                self.features_df['Invånare'].values[i] = self.features_df['Invånare'].values[i] / 10000
+
+            # TODO: Vilken effekt har det att blanda features med olika typer av värden?.
+            #   Medianinkomst 30000, Områdestyp (1, 2, eller 3), Andel lägenheter (procent 0 till 1)
+
+            # Normalisera numeriska features
+            # Alla numeriska värden skalas ner till mellan 0 och 1.
             self.features_df = self.scaler.fit_transform(self.features_df)
             # self.normalization_constant = np.max(features_X_train)
             # self.features_X_train = features_X_train  # / self.normalization_constant
@@ -97,9 +117,9 @@ class LocationData:
 
             # Konvertera etiketter till one-hot encoding
             # Nödvändigt för fler flerklass-klassificering
-            # Kategori 0 blir[1, 0, 0]
-            # Kategori 1 blir[0, 1, 0]
-            # Kategori 2 blir[0, 0, 1]
+            # Kategori 0 blir [1, 0, 0]
+            # Kategori 1 blir [0, 1, 0]
+            # Kategori 2 blir [0, 0, 1] osv.
             self.labels_y_train = tf.keras.utils.to_categorical(labels_y_train)
             self.labels_y_test = tf.keras.utils.to_categorical(labels_y_test)
 
@@ -116,41 +136,118 @@ class LocationData:
 
 class UserData:
     def __init__(self):
-        self.payed_parking = 0
+        self.people = 0
         self.apartments = 0
+        self.brf = 0
         self.apartment_age = 0
+        self.mean_income = 0
+        self.area_type = 0
+        self.early = 0
+        self.ev_penetration = 0
+        self.sign = 0
 
     def get_user_input(self):
         while True:
             try:
-                value = float(input(f"Parkeringsavgift: (0-10): "))
-                if 0 <= value <= 100:
-                    self.payed_parking = value
+                value = float(input(f"Invånare: "))
+                if 0 <= value <= 100000:
+                    self.people = value
                     break
                 else:
-                    print("Ange ett nummer mellan 1 och 5.")
+                    print("Ange ett nummer mellan 1 och 100000.")
             except ValueError:
                 print("Ange ett giltigt nummer!")
 
         while True:
             try:
-                value = float(input(f"Antal lägenheter: (1-5): "))
+                value = float(input(f"Andel lägenheter %: (0-100): "))
                 if 0 <= value <= 100:
-                    self.apartments = value
+                    self.apartments = value / 100
                     break
                 else:
-                    print("Ange ett nummer mellan 1 och 5.")
+                    print("Ange ett nummer mellan 0 och 100.")
             except ValueError:
                 print("Ange ett giltigt nummer!")
 
         while True:
             try:
-                value = float(input(f"Lägenheternas ålder: (1-5): "))
+                value = float(input(f"Andel BRF %: (0-100): "))
+                if 0 <= value <= 100:
+                    self.brf = value / 100
+                    break
+                else:
+                    print("Ange ett nummer mellan 0 och 100.")
+            except ValueError:
+                print("Ange ett giltigt nummer!")
+
+        while True:
+            try:
+                value = float(input(f"Lägenhetsålder: (0-100): "))
                 if 0 <= value <= 100:
                     self.apartment_age = value
                     break
                 else:
-                    print("Ange ett nummer mellan 1 och 5.")
+                    print("Ange ett nummer mellan 0 och 100.")
+
+            except ValueError:
+                print("Ange ett giltigt nummer!")
+
+        while True:
+            try:
+                value = float(input(f"Medelinkomst: (0-1000000): "))
+                if 0 <= value <= 1000000:
+                    self.mean_income = value
+                    break
+                else:
+                    print("Ange ett nummer mellan 0 och 1000000.")
+
+            except ValueError:
+                print("Ange ett giltigt nummer!")
+
+        while True:
+            try:
+                value = float(input(f"Områdestyp: (0-5): "))
+                if 0 <= value <= 5:
+                    self.area_type = value
+                    break
+                else:
+                    print("Ange ett nummer mellan 0 och 5.")
+
+            except ValueError:
+                print("Ange ett giltigt nummer!")
+
+        while True:
+            try:
+                value = float(input(f"Områdestyp: (0-2): "))
+                if 0 <= value <= 5:
+                    self.early = value
+                    break
+                else:
+                    print("Ange ett nummer mellan 0 och 2.")
+
+            except ValueError:
+                print("Ange ett giltigt nummer!")
+
+        while True:
+            try:
+                value = float(input(f"EV pen %: (0-100): "))
+                if 0 <= value <= 100:
+                    self.ev_penetration = value / 100
+                    break
+                else:
+                    print("Ange ett nummer mellan 0 och 100.")
+
+            except ValueError:
+                print("Ange ett giltigt nummer!")
+
+        while True:
+            try:
+                value = float(input(f"Skyltning: (0-2): "))
+                if 0 <= value <= 2:
+                    self.sign = value
+                    break
+                else:
+                    print("Ange ett nummer mellan 0 och 2.")
 
             except ValueError:
                 print("Ange ett giltigt nummer!")
@@ -174,18 +271,20 @@ class ClassificationModel:
         # Output Layer: Sista lagret har lika många noder som antalet target-klasser,
         # d.v.s modellen försöker välja mellan 3 kategorier för varje data-sample.
 
+        # TODO: Hur vet jag hur många neuroner (units) jag skall använda på mina lager
+        # Hur vet jag hur många lager jag skall ha?
         self.model = tf.keras.models.Sequential([
             tf.keras.layers.Input(shape=(self.location_data.number_of_features,)),
-            tf.keras.layers.Dense(10, activation='relu', ),
-            tf.keras.layers.Dense(10, activation='relu', ),
-            tf.keras.layers.Dense(self.location_data.number_of_output_categories, activation='softmax', ),
+            tf.keras.layers.Dense(units=10, activation='relu', ),
+            tf.keras.layers.Dense(units=10, activation='relu', ),
+            tf.keras.layers.Dense(units=self.location_data.number_of_output_categories, activation='softmax', ),
         ])
 
         self.model.compile(optimizer='adam',
                            loss='categorical_crossentropy',
                            metrics=['accuracy'])
 
-        print("Model set up successfully.")
+        print("Modellen Keras Sequential har skapats och kompilerats.")
 
     def train(self, verbose=1):
         # Verbosity mode: 0 = silent, 1 = progress bar, 2 = one line per epoch.
@@ -205,21 +304,19 @@ class ClassificationModel:
             Loss: Ett förlustvärde under 1.0 är ofta en bra indikator,
               men det beror på vilken typ av problem du arbetar med. Ju lägre, desto bättre.
         """
-        # self.history = self.model.fit(self.location_data.X_train,
-        #                               self.location_data.y_train,
-        #                               epochs=50,
-        #                               validation_split=0.2,
-        #                               verbose=verbose)
+
+        target_accuracy = 0.50
+        num_epochs = 100
+        loop = 0
 
         early_stopping = EarlyStopping(
             monitor='val_loss',  # 'val_accuracy' eller 'val_loss'
-            patience=10,  # antal epoker utan förbättring innan träningen stoppas
+            patience=num_epochs / 2,  # antal epoker utan förbättring innan träningen stoppas
             verbose=1,  # ger output om tidigt stopp inträffar
             restore_best_weights=True  # återställer vikterna till den bästa modellen
         )
 
-        target_accuracy = 0.80
-        num_epochs = 50
+        # TODO: Vad är default för batch_size?
         while True:
             # Dela upp träningsdatat i 80% träningsdata och 20% valideringsdata
             result = self.model.fit(self.location_data.features_X_train,
@@ -245,7 +342,12 @@ class ClassificationModel:
             else:
                 # Gör justeringar här, t ex, ändra hyperparametrar eller öka data
                 # target_accuracy -= 0.10
-                print("För dåligt, kör igen")
+                if loop < 2:
+                    print("För dåligt, kör igen")
+                    loop += 1
+                else:
+                    self.is_trained = True
+                    break
 
         print("Valideringsnoggrannhet (val_accuracy): Mått på hur bra modellen generaliserar till nya, osedda data.")
         print("Dvs hur många procent av valideringsdata (osedd data) som modellen klassificerar korrekt")
@@ -295,8 +397,9 @@ class ClassificationModel:
         if test_loss > .2:
             print("VARNING, Testförlusten indikerar låg säkerhet och potentiellt problematiska förutsägelser.")
 
-        # Gör prediktioner på några exempel
+        # Gör prediktioner på de tre första raderna från test datat
         sample_predictions = self.model.predict(self.location_data.features_X_test[:3], verbose=1)
+        # TODO: Skriv ut vilka labels som prediction gick bra respektive dålig för.
         print("\nSample predictions:")
         for i, prediction in enumerate(sample_predictions):
             print(f"Example {i + 1}: {prediction}")
@@ -306,8 +409,23 @@ class ClassificationModel:
             print()
 
     def rate(self, user_preferences: UserData):
-        data_to_predict = np.array(
-            [[user_preferences.payed_parking, user_preferences.apartments, user_preferences.apartment_age]])
+        # TODO: Skapa en array med alla värden från user_preferences
+        # data_to_predict = np.array(
+        #     [[user_preferences.people, user_preferences.apartments, user_preferences.brf,
+        #       user_preferences.apartment_age, user_preferences.mean_income, user_preferences.area_type,
+        #       user_preferences.early, user_preferences.ev_penetration, user_preferences.sign]])
+
+        data_to_predict = pd.DataFrame()
+        data_to_predict['Invånare'] = [user_preferences.people]
+        data_to_predict['Andel lägenheter'] = [user_preferences.apartments]
+        data_to_predict['Andel BRF'] = [user_preferences.brf]
+        data_to_predict['Lägenhetsålder'] = [user_preferences.apartment_age]
+        data_to_predict['Medianinkomst'] = [user_preferences.mean_income]
+        data_to_predict['Områdestyp'] = [user_preferences.area_type]
+        data_to_predict['Tidigt på plats'] = [user_preferences.early]
+        data_to_predict['Elbilspenetration'] = [user_preferences.ev_penetration]
+        data_to_predict['Skyltning'] = [user_preferences.sign]
+
         # normalized_data = values / self.normalization_constant
         normalized_data = self.scaler.transform(data_to_predict)
         predictions = self.model.predict(normalized_data)
