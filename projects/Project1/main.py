@@ -1,5 +1,6 @@
 import json
 import os
+import pickle
 from enum import Enum
 
 import h5py
@@ -34,6 +35,7 @@ class LocationData:
         self.labels_y_train = None
         self.labels_y_test = None
 
+        self.feature_names = []
         self.number_of_rows = 0
         self.number_of_features = 0
         self.number_of_output_categories = 0
@@ -54,17 +56,24 @@ class LocationData:
             self.locations_df.dropna(how="all", inplace=True)
             self.locations_df.dropna(inplace=True)
 
-            # För att förbättra träningen så kan vi duplicera datat
+            # TODO: Kan man förbättra träningen genom att duplicera datat och på sätt få mer data?
+            #   Skapa eget syntetiskt data.
+            #   Testa att balanser upp de kategorier som det är få av så att vi vet att de kommer med i träningsdata
+            #   och inte slumpmässigt hamnar i testdatat.
+            #   Använd pandas cut för att splitta en feature i bins. pandas.get_dummies
+
             self.locations_df = self.locations_df._append(self.locations_df, ignore_index=True)
             self.locations_df = self.locations_df._append(self.locations_df, ignore_index=True)
 
-            self.features_df = self.locations_df[
-                ["Invånare", "Andel lägenheter", "Andel BRF", "Lägenhetsålder", "Medianinkomst", "Områdestyp",
-                 "Tidigt på plats", "Elbilspenetration", "Skyltning"]]
+            self.features_df = pd.DataFrame(self.locations_df[
+                                                ["Invånare", "Andel lägenheter", "Andel BRF", "Lägenhetsålder",
+                                                 "Medianinkomst", "Områdestyp",
+                                                 "Tidigt på plats", "Elbilspenetration", "Skyltning"]])
             self.target_df = self.locations_df["Rating"]
 
             # self.number_of_rows = len(self.features_df)
             # self.number_of_features = len(self.features_df.columns)
+            self.feature_names = list(self.features_df.columns)
             self.number_of_rows = self.features_df.shape[0]
             self.number_of_features = self.features_df.shape[1]
             self.number_of_output_categories = len(QualityRating)  # EXCELLENT -- BAD
@@ -91,20 +100,29 @@ class LocationData:
             # self.features_df['Invånare'] = self.features_df['Invånare'] / 10000
             # self.features_df.loc[:, 'Invånare'] = self.features_df['Invånare'] / 10000
             # self.features_df.loc[:, 'Medianinkomst'] = self.features_df['Medianinkomst'] / 10000
-            # self.features_df['Invånare'] = self.self.features_df['Invånare'].apply(lambda x: x/1000)
+            # self.features_df['Invånare'] = self.features_df['Invånare'].apply(lambda x: x/1000)
             # self.features_df["Invånare"] = self.features_df.apply(lambda x: x["Invånare"]/1000)
-            for i in range(len(self.features_df)):
-                self.features_df['Invånare'].values[i] = self.features_df['Invånare'].values[i] / 10000
+            # for i in range(len(self.features_df)):
+            #     self.features_df['Invånare'].values[i] = self.features_df['Invånare'].values[i] / 10_000
 
             # TODO: Vilken effekt har det att blanda features med olika typer av värden?.
             #   Medianinkomst 30000, Områdestyp (1, 2, eller 3), Andel lägenheter (procent 0 till 1)
 
             # Normalisera numeriska features
             # Alla numeriska värden skalas ner till mellan 0 och 1.
-            self.features_df = self.scaler.fit_transform(self.features_df)
-            # self.normalization_constant = np.max(features_X_train)
-            # self.features_X_train = features_X_train  # / self.normalization_constant
-            # self.features_X_test = features_X_test  # / self.normalization_constant
+            scaled_columns = pd.DataFrame(self.scaler.fit_transform(self.features_df[['Invånare', 'Medianinkomst']]),
+                                          columns=['Invånare', 'Medianinkomst'])
+            self.features_df[['Invånare', 'Medianinkomst']] = scaled_columns
+
+            # Normalisera procentuella features
+            # Andel Lägenheter, Andel BRF osv  ligger redan mellan 0-1
+
+            # Normalisera diskreta kategorier med One-hot encode
+            self.features_df = pd.get_dummies(self.features_df,
+                                              columns=['Lägenhetsålder', 'Områdestyp', 'Tidigt på plats', 'Skyltning'],
+                                              drop_first=True)
+            self.number_of_features = self.features_df.shape[1]
+            # self.features_df = tf.keras.utils.to_categorical(self.features_df['Lägenhetsålder', 'Områdestyp'])
 
             # Dela upp data i 20% testdata, 80% träningsdata
             train_test_split_data = train_test_split(self.features_df, self.target_df, test_size=0.2, random_state=42)
@@ -146,10 +164,12 @@ class UserData:
         self.ev_penetration = 0
         self.sign = 0
 
-    def get_user_input(self):
+    def get_user_input(self, columns: list):
+
+        # if "Invånare" in columns:
         while True:
             try:
-                value = float(input(f"Invånare: "))
+                value = int(input(f"Invånare: "))
                 if 0 <= value <= 100000:
                     self.people = value
                     break
@@ -160,7 +180,7 @@ class UserData:
 
         while True:
             try:
-                value = float(input(f"Andel lägenheter %: (0-100): "))
+                value = int(input(f"Andel lägenheter %: (0-100): "))
                 if 0 <= value <= 100:
                     self.apartments = value / 100
                     break
@@ -171,7 +191,7 @@ class UserData:
 
         while True:
             try:
-                value = float(input(f"Andel BRF %: (0-100): "))
+                value = int(input(f"Andel BRF %: (0-100): "))
                 if 0 <= value <= 100:
                     self.brf = value / 100
                     break
@@ -182,7 +202,7 @@ class UserData:
 
         while True:
             try:
-                value = float(input(f"Lägenhetsålder: (0-100): "))
+                value = int(input(f"Lägenhetsålder: (0-100): "))
                 if 0 <= value <= 100:
                     self.apartment_age = value
                     break
@@ -194,7 +214,7 @@ class UserData:
 
         while True:
             try:
-                value = float(input(f"Medelinkomst: (0-1000000): "))
+                value = int(input(f"Medelinkomst: (0-1000000): "))
                 if 0 <= value <= 1000000:
                     self.mean_income = value
                     break
@@ -206,7 +226,7 @@ class UserData:
 
         while True:
             try:
-                value = float(input(f"Områdestyp: (0-5): "))
+                value = int(input(f"Områdestyp: (0-5): "))
                 if 0 <= value <= 5:
                     self.area_type = value
                     break
@@ -218,7 +238,7 @@ class UserData:
 
         while True:
             try:
-                value = float(input(f"Områdestyp: (0-2): "))
+                value = int(input(f"Först på plats: (0-2): "))
                 if 0 <= value <= 5:
                     self.early = value
                     break
@@ -230,7 +250,7 @@ class UserData:
 
         while True:
             try:
-                value = float(input(f"EV pen %: (0-100): "))
+                value = int(input(f"EV pen %: (0-100): "))
                 if 0 <= value <= 100:
                     self.ev_penetration = value / 100
                     break
@@ -242,7 +262,7 @@ class UserData:
 
         while True:
             try:
-                value = float(input(f"Skyltning: (0-2): "))
+                value = int(input(f"Skyltning: (0-2): "))
                 if 0 <= value <= 2:
                     self.sign = value
                     break
@@ -258,6 +278,7 @@ class ClassificationModel:
         self.location_data = location_data
         self.model: tf.keras.models.Sequential = None
         self.history = None
+        self.trained_columns = []
         self.normalization_constant = location_data.normalization_constant if location_data else 1
         self.scaler = location_data.scaler if location_data else None
         self.is_trained = False
@@ -271,15 +292,25 @@ class ClassificationModel:
         # Output Layer: Sista lagret har lika många noder som antalet target-klasser,
         # d.v.s modellen försöker välja mellan 3 kategorier för varje data-sample.
 
-        # TODO: Hur vet jag hur många neuroner (units) jag skall använda på mina lager
-        # Hur vet jag hur många lager jag skall ha?
+        # Dropout hanterar overfitting och stänger av 50% av slumpade neuroner under träningen.
+        # Vi vill inte bero för mycket på enstaka features/detaljer för att avgöra siffror.
+        # 0.5 är aggressivt nog för att begränsa overfitting, litet nog för att inte hindra inlärning.
+        # Ungefär som att täcka över delar av datat under träning, så nätverket måste lära sig fler sätt att känna
+        # igen mönster.
+
+        # TODO: Hur vet jag hur många neuroner (units) jag skall använda på mina lager?
+        #   Hur vet jag hur många lager jag skall ha?
+        #   Utvärdera keras_tuner
+        #   Testa att lägga till ett Dropout lager innan sista output layer.
         self.model = tf.keras.models.Sequential([
             tf.keras.layers.Input(shape=(self.location_data.number_of_features,)),
             tf.keras.layers.Dense(units=10, activation='relu', ),
             tf.keras.layers.Dense(units=10, activation='relu', ),
+            # tf.keras.layers.Dropout(0.5),
             tf.keras.layers.Dense(units=self.location_data.number_of_output_categories, activation='softmax', ),
         ])
 
+        # TODO: undersök om jag skall ha fler metrics
         self.model.compile(optimizer='adam',
                            loss='categorical_crossentropy',
                            metrics=['accuracy'])
@@ -305,18 +336,17 @@ class ClassificationModel:
               men det beror på vilken typ av problem du arbetar med. Ju lägre, desto bättre.
         """
 
-        target_accuracy = 0.50
+        target_accuracy = 0.5
         num_epochs = 100
         loop = 0
 
         early_stopping = EarlyStopping(
             monitor='val_loss',  # 'val_accuracy' eller 'val_loss'
-            patience=num_epochs / 2,  # antal epoker utan förbättring innan träningen stoppas
+            patience=num_epochs / 10,  # antal epoker utan förbättring innan träningen stoppas
             verbose=1,  # ger output om tidigt stopp inträffar
             restore_best_weights=True  # återställer vikterna till den bästa modellen
         )
 
-        # TODO: Vad är default för batch_size?
         while True:
             # Dela upp träningsdatat i 80% träningsdata och 20% valideringsdata
             result = self.model.fit(self.location_data.features_X_train,
@@ -324,11 +354,13 @@ class ClassificationModel:
                                     validation_split=0.2,
                                     epochs=num_epochs,
                                     callbacks=[early_stopping],
-                                    verbose=verbose)
+                                    verbose=verbose,
+                                    batch_size=8)
 
             validation_accuracy = result.history['val_accuracy'][-1]
             training_accuracy = result.history["accuracy"][-1]
             self.history = result.history
+            self.trained_columns = self.location_data.features_df.columns.to_list()
 
             print("")
             print(f"Acceptabel valideringsnoggrannhet {target_accuracy:.0%} \n"
@@ -349,13 +381,12 @@ class ClassificationModel:
                     self.is_trained = True
                     break
 
+        print(f"Träning av modellen är klar.")
         print("Valideringsnoggrannhet (val_accuracy): Mått på hur bra modellen generaliserar till nya, osedda data.")
         print("Dvs hur många procent av valideringsdata (osedd data) som modellen klassificerar korrekt")
         print("")
         print("Träningsnoggrannhet (accuracy): Mått på hur bra modellen lär sig från träningsdata.")
         print("Dvs hur många procent av träningsdata som modellen klassificerade korrekt.")
-
-        print(f"Model trained successfully.")
 
     def evaluation_graph(self):
         # Visualisera träningshistorik
@@ -426,9 +457,30 @@ class ClassificationModel:
         data_to_predict['Elbilspenetration'] = [user_preferences.ev_penetration]
         data_to_predict['Skyltning'] = [user_preferences.sign]
 
-        # normalized_data = values / self.normalization_constant
-        normalized_data = self.scaler.transform(data_to_predict)
-        predictions = self.model.predict(normalized_data)
+        # Normalisera numeriska features (skalas ner till mellan 0 och 1)
+        scaled_columns = pd.DataFrame(self.scaler.transform(data_to_predict[['Invånare', 'Medianinkomst']]),
+                                      columns=['Invånare', 'Medianinkomst'])
+        data_to_predict[['Invånare', 'Medianinkomst']] = scaled_columns
+
+        # Normalisera procentuella features
+        # Andel Lägenheter, Andel BRF osv  ligger redan mellan 0-1
+
+        # Normalisera diskreta kategorier med One-hot encode
+        data_to_predict = pd.get_dummies(data_to_predict,
+                                         columns=['Lägenhetsålder', 'Områdestyp', 'Tidigt på plats', 'Skyltning'],
+                                         drop_first=False)
+
+        # Säkerställ att data_to_predict har samma kolumner som träningsdata
+        # Fyll in saknade kolumner (från träning) med 0 om de saknas i nya datan
+        missing_cols = set(self.trained_columns) - set(data_to_predict.columns)
+        for col in missing_cols:
+            data_to_predict[col] = False
+
+        # Ordna kolumnerna i samma ordning som träningsdata
+        data_to_predict = data_to_predict[self.trained_columns]
+
+        # normalized_data = self.scaler.transform(data_to_predict)
+        predictions = self.model.predict(data_to_predict)
         return QualityRating(np.argmax(predictions))  # Index with the highest value is the enum value
 
     def save(self, file_name='model.h5'):
@@ -444,6 +496,9 @@ class ClassificationModel:
             # Spara historiken
             with open('training_history.json', 'w') as f:
                 json.dump(self.history, f)
+            # Spara kolumnnamnen
+            with open('columns.pkl', 'wb') as file:
+                pickle.dump(self.trained_columns, file)
 
         elif file_type == "h5":
             # Spara modellen i HDF5-format
@@ -471,6 +526,9 @@ class ClassificationModel:
             # Ladda historiken
             with open('training_history.json', 'r') as f:
                 self.history = json.load(f)
+            # Ladda kolumnnamnen
+            with open('columns.pkl', 'rb') as file:
+                self.trained_columns = pickle.load(file)
 
         elif file_type == "h5":
             # Ladda modellen
@@ -492,7 +550,7 @@ class UserInterface:
 
     def user_input(self):
         while True:
-            self.user_data.get_user_input()
+            self.user_data.get_user_input(self.location_data.feature_names)
             rating = self.rating_model.rate(self.user_data)
             print(rating.name)
             exit_loop = input(f"\nDo you want to exit (y/n)")
