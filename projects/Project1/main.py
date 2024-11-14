@@ -42,8 +42,8 @@ class LocationData:
         self.normalization_constant = 1
         self.scaler = MinMaxScaler()
 
-    def is_loaded(self):
-        return True if self.number_of_rows > 0 else False
+    def is_loaded(self) -> bool:
+        return self.number_of_rows > 0
 
     def load(self, file_name="location_training_data.csv"):
         try:
@@ -59,16 +59,16 @@ class LocationData:
             # TODO: Kan man förbättra träningen genom att duplicera datat och på sätt få mer data?
             #   Skapa eget syntetiskt data.
             #   Testa att balanser upp de kategorier som det är få av så att vi vet att de kommer med i träningsdata
-            #   och inte slumpmässigt hamnar i testdatat.
+            #   och inte slumpmässigt hamnar i testdata.
             #   Använd pandas cut för att splitta en feature i bins. pandas.get_dummies
 
             self.locations_df = self.locations_df._append(self.locations_df, ignore_index=True)
             self.locations_df = self.locations_df._append(self.locations_df, ignore_index=True)
 
             self.features_df = pd.DataFrame(self.locations_df[
-                                                ["Invånare", "Andel lägenheter", "Andel BRF", "Lägenhetsålder",
-                                                 "Medianinkomst", "Områdestyp",
-                                                 "Tidigt på plats", "Elbilspenetration", "Skyltning"]])
+                                                ["Invånare", "Medianinkomst",
+                                                 "Andel lägenheter", "Andel BRF", "Elbilspenetration",
+                                                 "Lägenhetsålder", "Områdestyp", "Tidigt på plats", "Skyltning"]])
             self.target_df = self.locations_df["Rating"]
 
             # self.number_of_rows = len(self.features_df)
@@ -82,7 +82,7 @@ class LocationData:
                 print(f"Det finns färre unika labels i datat än de {len(QualityRating)} som stöds")
                 self.number_of_output_categories = len(self.target_df.unique())
             elif len(self.target_df.unique()) > self.number_of_output_categories:
-                print(f"Varning, Det finns fler unika labels i datat än de {len(QualityRating)} som stöds")
+                print(f"Det finns fler unika labels i datat än de {len(QualityRating)} som stöds")
 
             print(f"Data laddat \nAntal datapunkter {len(self.locations_df)}")
         except Exception as e:
@@ -95,7 +95,6 @@ class LocationData:
             # Klassificeringarna blir numeriska värden tagna från vår enum QualityRating
             self.target_df = self.target_df.apply(lambda x: QualityRating[x].value)
 
-            # TODO: Hur stor påverkan har det att minska stora värden t ex för Invånare?
             # För att minska påverkan från "Invånare" divideras den med ett stort tal, som 10 000, innan MinMaxScaler.
             # self.features_df['Invånare'] = self.features_df['Invånare'] / 10000
             # self.features_df.loc[:, 'Invånare'] = self.features_df['Invånare'] / 10000
@@ -105,8 +104,7 @@ class LocationData:
             # for i in range(len(self.features_df)):
             #     self.features_df['Invånare'].values[i] = self.features_df['Invånare'].values[i] / 10_000
 
-            # TODO: Vilken effekt har det att blanda features med olika typer av värden?.
-            #   Medianinkomst 30000, Områdestyp (1, 2, eller 3), Andel lägenheter (procent 0 till 1)
+            # Olika features är av olika typer och bör normaliseras på olika sätt.
 
             # Normalisera numeriska features
             # Alla numeriska värden skalas ner till mellan 0 och 1.
@@ -128,8 +126,8 @@ class LocationData:
             train_test_split_data = train_test_split(self.features_df, self.target_df, test_size=0.2, random_state=42)
 
             # X är features, y är labels
-            features_X_train = train_test_split_data[0]  # Träningsdata
-            features_X_test = train_test_split_data[1]  # Testdata
+            features_x_train = train_test_split_data[0]  # Träningsdata
+            features_x_test = train_test_split_data[1]  # Testdata
             labels_y_train = train_test_split_data[2]  # Tränings-labels
             labels_y_test = train_test_split_data[3]  # Test-labels
 
@@ -141,15 +139,60 @@ class LocationData:
             self.labels_y_train = tf.keras.utils.to_categorical(labels_y_train)
             self.labels_y_test = tf.keras.utils.to_categorical(labels_y_test)
 
-            self.features_X_train = features_X_train
-            self.features_X_test = features_X_test
+            self.features_X_train = features_x_train
+            self.features_X_test = features_x_test
 
             print("Data förberett för träning")
-            print(f"Antal datapunkter träningsdata {len(features_X_train)}, Max-värde {np.max(features_X_train)} ")
-            print(f"Antal datapunkter testdata {len(features_X_test)}, Max-värde {np.max(features_X_test)} ")
+            print(self.features_X_train.columns.to_list())
+            print(f"Antal datapunkter träningsdata {len(features_x_train)}, Max-värde {np.max(features_x_train)} ")
+            print(f"Antal datapunkter testdata {len(features_x_test)}, Max-värde {np.max(features_x_test)} ")
         except Exception as e:
             print("Fel vid förberedelse av data")
             print(e)
+
+    def create_synthetic_data(self, file_name="location_training_data.csv"):
+        # Läs in det ursprungliga datat
+        current_directory = os.path.dirname(__file__)
+        file_path = os.path.join(current_directory, file_name)
+        df = pd.read_csv(file_path, delimiter=';', decimal=',')
+
+        # Bestäm hur många gånger du vill öka datasetet
+        n_copies = 10
+
+        # Skapa en lista för att lagra syntetiskt data
+        synthetic_data = []
+
+        # För varje rad i originaldata
+        for i in range(n_copies):
+            for _, row in df.iterrows():
+                # Skapa en kopia av raden
+                synthetic_row = row.copy()
+
+                # Addera Gaussian Noise till de numeriska kolumnerna
+                synthetic_row['Invånare'] = int(max(0, row['Invånare'] + np.random.normal(0, row['Invånare'] * 0.05)))
+                synthetic_row['Medianinkomst'] = int(max(0, row['Medianinkomst'] + np.random.normal(0, row[
+                    'Medianinkomst'] * 0.05)))
+                synthetic_row['Andel lägenheter'] = round(
+                    min(1, max(0, row['Andel lägenheter'] + np.random.normal(0, 0.05))), 2)
+                synthetic_row['Andel BRF'] = round(min(1, max(0, row['Andel BRF'] + np.random.normal(0, 0.05))), 2)
+                synthetic_row['Elbilspenetration'] = round(
+                    min(1, max(0, row['Elbilspenetration'] + np.random.normal(0, 0.05))), 2)
+                synthetic_row['kWh'] = round(max(0, row['kWh'] + np.random.normal(0, row['kWh'] * 0.1)), 2)
+                synthetic_row['Kostnad/LP'] = int(
+                    max(0, row['Kostnad/LP'] + np.random.normal(0, row['Kostnad/LP'] * 0.1)))
+                synthetic_row['# of LP'] = int(max(0, int(row['# of LP'] + np.random.normal(0, 1))))  # Hela tal
+
+                # Lägg till den syntetiska raden i listan
+                synthetic_data.append(synthetic_row)
+
+        # Konvertera listan till en DataFrame
+        synthetic_df = pd.DataFrame(synthetic_data)
+
+        # Kombinera originaldata med syntetiskt data
+        combined_df = pd.concat([df, synthetic_df], ignore_index=True)
+
+        # Spara till ny CSV-fil
+        combined_df.to_csv(os.path.join(current_directory, "synthetic_data.csv"), index=False, sep=";", decimal=',')
 
 
 class UserData:
@@ -169,12 +212,24 @@ class UserData:
         # if "Invånare" in columns:
         while True:
             try:
-                value = int(input(f"Invånare: "))
-                if 0 <= value <= 100000:
+                value = int(input(f"Invånare: (0-100000): "))
+                if 0 <= value <= 100_000:
                     self.people = value
                     break
                 else:
-                    print("Ange ett nummer mellan 1 och 100000.")
+                    print("Ange ett nummer mellan 0 och 100000.")
+            except ValueError:
+                print("Ange ett giltigt nummer!")
+
+        while True:
+            try:
+                value = int(input(f"Medelinkomst: (0-1000000): "))
+                if 0 <= value <= 1_000_000:
+                    self.mean_income = value
+                    break
+                else:
+                    print("Ange ett nummer mellan 0 och 1000000.")
+
             except ValueError:
                 print("Ange ett giltigt nummer!")
 
@@ -202,54 +257,6 @@ class UserData:
 
         while True:
             try:
-                value = int(input(f"Lägenhetsålder: (0-100): "))
-                if 0 <= value <= 100:
-                    self.apartment_age = value
-                    break
-                else:
-                    print("Ange ett nummer mellan 0 och 100.")
-
-            except ValueError:
-                print("Ange ett giltigt nummer!")
-
-        while True:
-            try:
-                value = int(input(f"Medelinkomst: (0-1000000): "))
-                if 0 <= value <= 1000000:
-                    self.mean_income = value
-                    break
-                else:
-                    print("Ange ett nummer mellan 0 och 1000000.")
-
-            except ValueError:
-                print("Ange ett giltigt nummer!")
-
-        while True:
-            try:
-                value = int(input(f"Områdestyp: (0-5): "))
-                if 0 <= value <= 5:
-                    self.area_type = value
-                    break
-                else:
-                    print("Ange ett nummer mellan 0 och 5.")
-
-            except ValueError:
-                print("Ange ett giltigt nummer!")
-
-        while True:
-            try:
-                value = int(input(f"Först på plats: (0-2): "))
-                if 0 <= value <= 5:
-                    self.early = value
-                    break
-                else:
-                    print("Ange ett nummer mellan 0 och 2.")
-
-            except ValueError:
-                print("Ange ett giltigt nummer!")
-
-        while True:
-            try:
                 value = int(input(f"EV pen %: (0-100): "))
                 if 0 <= value <= 100:
                     self.ev_penetration = value / 100
@@ -262,12 +269,48 @@ class UserData:
 
         while True:
             try:
-                value = int(input(f"Skyltning: (0-2): "))
-                if 0 <= value <= 2:
+                value = int(input(f"Lägenhetsålder: (1-4): "))
+                if 1 <= value <= 4:
+                    self.apartment_age = value
+                    break
+                else:
+                    print("Ange ett nummer mellan 1 och 4.")
+
+            except ValueError:
+                print("Ange ett giltigt nummer!")
+
+        while True:
+            try:
+                value = int(input(f"Områdestyp: (1-5): "))
+                if 1 <= value <= 5:
+                    self.area_type = value
+                    break
+                else:
+                    print("Ange ett nummer mellan 1 och 5.")
+
+            except ValueError:
+                print("Ange ett giltigt nummer!")
+
+        while True:
+            try:
+                value = int(input(f"Först på plats: (1-3): "))
+                if 1 <= value <= 3:
+                    self.early = value
+                    break
+                else:
+                    print("Ange ett nummer mellan 1 och 3.")
+
+            except ValueError:
+                print("Ange ett giltigt nummer!")
+
+        while True:
+            try:
+                value = int(input(f"Skyltning: (1-3): "))
+                if 1 <= value <= 3:
                     self.sign = value
                     break
                 else:
-                    print("Ange ett nummer mellan 0 och 2.")
+                    print("Ange ett nummer mellan 1 och 3.")
 
             except ValueError:
                 print("Ange ett giltigt nummer!")
@@ -302,20 +345,24 @@ class ClassificationModel:
         #   Hur vet jag hur många lager jag skall ha?
         #   Utvärdera keras_tuner
         #   Testa att lägga till ett Dropout lager innan sista output layer.
-        self.model = tf.keras.models.Sequential([
-            tf.keras.layers.Input(shape=(self.location_data.number_of_features,)),
-            tf.keras.layers.Dense(units=10, activation='relu', ),
-            tf.keras.layers.Dense(units=10, activation='relu', ),
-            # tf.keras.layers.Dropout(0.5),
-            tf.keras.layers.Dense(units=self.location_data.number_of_output_categories, activation='softmax', ),
-        ])
+        try:
+            self.model = tf.keras.models.Sequential([
+                tf.keras.layers.Input(shape=(self.location_data.number_of_features,)),
+                tf.keras.layers.Dense(units=10, activation='relu', ),
+                tf.keras.layers.Dense(units=10, activation='relu', ),
+                # tf.keras.layers.Dropout(0.5),
+                tf.keras.layers.Dense(units=self.location_data.number_of_output_categories, activation='softmax', ),
+            ])
 
-        # TODO: undersök om jag skall ha fler metrics
-        self.model.compile(optimizer='adam',
-                           loss='categorical_crossentropy',
-                           metrics=['accuracy'])
+            # TODO: undersök om jag skall ha fler metrics
+            self.model.compile(optimizer='adam',
+                               loss='categorical_crossentropy',
+                               metrics=['accuracy'])
 
-        print("Modellen Keras Sequential har skapats och kompilerats.")
+            print("Modellen Keras Sequential har skapats och kompilerats.")
+        except Exception as e:
+            print("Fel vid uppsättning av modell")
+            print(e)
 
     def train(self, verbose=1):
         # Verbosity mode: 0 = silent, 1 = progress bar, 2 = one line per epoch.
@@ -336,7 +383,7 @@ class ClassificationModel:
               men det beror på vilken typ av problem du arbetar med. Ju lägre, desto bättre.
         """
 
-        target_accuracy = 0.5
+        target_accuracy = 0.50
         num_epochs = 100
         loop = 0
 
@@ -347,97 +394,111 @@ class ClassificationModel:
             restore_best_weights=True  # återställer vikterna till den bästa modellen
         )
 
-        while True:
-            # Dela upp träningsdatat i 80% träningsdata och 20% valideringsdata
-            result = self.model.fit(self.location_data.features_X_train,
-                                    self.location_data.labels_y_train,
-                                    validation_split=0.2,
-                                    epochs=num_epochs,
-                                    callbacks=[early_stopping],
-                                    verbose=verbose,
-                                    batch_size=8)
+        try:
+            while True:
+                # Dela upp träningsdata i 80% träningsdata och 20% valideringsdata
+                result = self.model.fit(self.location_data.features_X_train,
+                                        self.location_data.labels_y_train,
+                                        validation_split=0.2,
+                                        epochs=num_epochs,
+                                        callbacks=[early_stopping],
+                                        verbose=verbose,
+                                        batch_size=8)
 
-            validation_accuracy = result.history['val_accuracy'][-1]
-            training_accuracy = result.history["accuracy"][-1]
-            self.history = result.history
-            self.trained_columns = self.location_data.features_df.columns.to_list()
+                validation_accuracy = result.history['val_accuracy'][-1]
+                training_accuracy = result.history["accuracy"][-1]
+                self.history = result.history
+                self.trained_columns = self.location_data.features_df.columns.to_list()
 
-            print("")
-            print(f"Acceptabel valideringsnoggrannhet {target_accuracy:.0%} \n"
-                  f"Valideringsnoggrannhet {validation_accuracy:.2%} \n"
-                  f"Träningsnoggrannhet {training_accuracy:.2%}  \n")
+                print("")
+                print(f"Acceptabel valideringsnoggrannhet {target_accuracy:.0%} \n"
+                      f"Valideringsnoggrannhet {validation_accuracy:.2%} \n"
+                      f"Träningsnoggrannhet {training_accuracy:.2%}  \n")
 
-            # TODO: Skall man testa mot validation_accuracy eller training_accuracy?
-            if validation_accuracy >= target_accuracy:
-                self.is_trained = True
-                break
-            else:
-                # Gör justeringar här, t ex, ändra hyperparametrar eller öka data
-                # target_accuracy -= 0.10
-                if loop < 2:
-                    print("För dåligt, kör igen")
-                    loop += 1
-                else:
+                # TODO: Skall man testa mot validation_accuracy eller training_accuracy?
+                if validation_accuracy >= target_accuracy:
                     self.is_trained = True
                     break
+                else:
+                    # Gör justeringar här, t ex, ändra hyperparametrar eller öka data
+                    # target_accuracy -= 0.10
+                    if loop < 2:
+                        print("För dåligt, kör igen")
+                        loop += 1
+                    else:
+                        self.is_trained = True
+                        break
 
-        print(f"Träning av modellen är klar.")
-        print("Valideringsnoggrannhet (val_accuracy): Mått på hur bra modellen generaliserar till nya, osedda data.")
-        print("Dvs hur många procent av valideringsdata (osedd data) som modellen klassificerar korrekt")
-        print("")
-        print("Träningsnoggrannhet (accuracy): Mått på hur bra modellen lär sig från träningsdata.")
-        print("Dvs hur många procent av träningsdata som modellen klassificerade korrekt.")
+            print(f"Träning av modellen är klar.")
+            print(
+                "Valideringsnoggrannhet (val_accuracy): Mått på hur bra modellen generaliserar till nya, osedda data.")
+            print("Dvs hur många procent av valideringsdata (osedd data) som modellen klassificerar korrekt")
+            print("")
+            print("Träningsnoggrannhet (accuracy): Mått på hur bra modellen lär sig från träningsdata.")
+            print("Dvs hur många procent av träningsdata som modellen klassificerade korrekt.")
+        except Exception as e:
+            print("Fel vid träning av modell")
+            print(e)
 
     def evaluation_graph(self):
         # Visualisera träningshistorik
-        plt.figure(figsize=(12, 4))
 
-        # Plot träningsnoggrannhet och valideringsnoggrannhet
-        plt.subplot(1, 2, 1)
-        plt.plot(self.history['accuracy'], label='Träningsnoggrannhet')
-        plt.plot(self.history['val_accuracy'], label='Valideringsnoggrannhet')
-        plt.title('Modellens noggrannhet')
-        plt.xlabel('Epoch')
-        plt.ylabel('Noggrannhet')
-        plt.legend()
+        try:
+            plt.figure(figsize=(12, 4))
 
-        # Plot träningsförlust och valideringsförlust
-        # Training Loss: Beräknas under varje epoch. Representerar hur bra model fitting.
-        # Validation Loss: Beräknas på separat validerings-data. Visar eventuell model overfitting.
-        # Om båda går nedåt under träning, lär sig modellen väl.
-        # Om training loss går ner, men validation loss börjar gå upp, kan det indikera overfitting
-        plt.subplot(1, 2, 2)
-        plt.plot(self.history['loss'], label='Träningsförlust')
-        plt.plot(self.history['val_loss'], label='Valideringsförlust')
-        plt.title('Modellens förlust')
-        plt.xlabel('Epoch')
-        plt.ylabel('Förlust')
-        plt.legend()
+            # Plot träningsnoggrannhet och valideringsnoggrannhet
+            plt.subplot(1, 2, 1)
+            plt.plot(self.history['accuracy'], label='Träningsnoggrannhet')
+            plt.plot(self.history['val_accuracy'], label='Valideringsnoggrannhet')
+            plt.title('Modellens noggrannhet')
+            plt.xlabel('Epoch')
+            plt.ylabel('Noggrannhet')
+            plt.legend()
 
-        plt.tight_layout()
-        plt.show()
+            # Plot träningsförlust och valideringsförlust
+            # Training Loss: Beräknas under varje epoch. Representerar hur bra model fitting.
+            # Validation Loss: Beräknas på separat validerings-data. Visar eventuell model overfitting.
+            # Om båda går nedåt under träning, lär sig modellen väl.
+            # Om training loss går ner, men validation loss börjar gå upp, kan det indikera overfitting
+            plt.subplot(1, 2, 2)
+            plt.plot(self.history['loss'], label='Träningsförlust')
+            plt.plot(self.history['val_loss'], label='Valideringsförlust')
+            plt.title('Modellens förlust')
+            plt.xlabel('Epoch')
+            plt.ylabel('Förlust')
+            plt.legend()
+
+            plt.tight_layout()
+            plt.show()
+        except Exception as e:
+            print("Fel vid visning av graf")
+            print(e)
 
     def evaluate(self):
         # Utvärdera modellen med hjälp av testdata
-        test_loss, test_acc = self.model.evaluate(self.location_data.features_X_test,
-                                                  self.location_data.labels_y_test,
-                                                  verbose=2)
-        print("Modellens utvärdering genom testdata")
-        print(f'Testnoggrannhet: {test_acc:.2%}')
-        print(f'Testförlust {test_loss:.2%} dvs hur "säkra" var dessa förutsägelser.')
-        if test_loss > .2:
-            print("VARNING, Testförlusten indikerar låg säkerhet och potentiellt problematiska förutsägelser.")
+        try:
+            test_loss, test_acc = self.model.evaluate(self.location_data.features_X_test,
+                                                      self.location_data.labels_y_test,
+                                                      verbose=2)
+            print("Modellens utvärdering genom testdata")
+            print(f'Testnoggrannhet: {test_acc:.2%}')
+            print(f'Testförlust {test_loss:.2%} dvs hur "säkra" var dessa förutsägelser.')
+            if test_loss > .2:
+                print("VARNING, Testförlusten indikerar låg säkerhet och potentiellt problematiska förutsägelser.")
 
-        # Gör prediktioner på de tre första raderna från test datat
-        sample_predictions = self.model.predict(self.location_data.features_X_test[:3], verbose=1)
-        # TODO: Skriv ut vilka labels som prediction gick bra respektive dålig för.
-        print("\nSample predictions:")
-        for i, prediction in enumerate(sample_predictions):
-            print(f"Example {i + 1}: {prediction}")
-            print(f"Predicted class: {np.argmax(prediction)}")
-            print(f"Actual class: {np.argmax(self.location_data.labels_y_test[i])}")
-            print(f"Result: {np.argmax(self.location_data.labels_y_test[i]) == np.argmax(prediction)}")
-            print()
+            # Gör prediktioner på de tre första raderna från test datat
+            sample_predictions = self.model.predict(self.location_data.features_X_test[:3], verbose=1)
+            # TODO: Skriv ut vilka labels som prediction gick bra respektive dålig för.
+            print("\nSample predictions:")
+            for i, prediction in enumerate(sample_predictions):
+                print(f"Example {i + 1}: {prediction}")
+                print(f"Predicted class: {np.argmax(prediction)}")
+                print(f"Actual class: {np.argmax(self.location_data.labels_y_test[i])}")
+                print(f"Result: {np.argmax(self.location_data.labels_y_test[i]) == np.argmax(prediction)}")
+                print()
+        except Exception as e:
+            print("Fel vid utvärdering av modell")
+            print(e)
 
     def rate(self, user_preferences: UserData):
         # TODO: Skapa en array med alla värden från user_preferences
@@ -446,100 +507,112 @@ class ClassificationModel:
         #       user_preferences.apartment_age, user_preferences.mean_income, user_preferences.area_type,
         #       user_preferences.early, user_preferences.ev_penetration, user_preferences.sign]])
 
-        data_to_predict = pd.DataFrame()
-        data_to_predict['Invånare'] = [user_preferences.people]
-        data_to_predict['Andel lägenheter'] = [user_preferences.apartments]
-        data_to_predict['Andel BRF'] = [user_preferences.brf]
-        data_to_predict['Lägenhetsålder'] = [user_preferences.apartment_age]
-        data_to_predict['Medianinkomst'] = [user_preferences.mean_income]
-        data_to_predict['Områdestyp'] = [user_preferences.area_type]
-        data_to_predict['Tidigt på plats'] = [user_preferences.early]
-        data_to_predict['Elbilspenetration'] = [user_preferences.ev_penetration]
-        data_to_predict['Skyltning'] = [user_preferences.sign]
+        try:
+            data_to_predict = pd.DataFrame()
+            data_to_predict['Invånare'] = [user_preferences.people]
+            data_to_predict['Andel lägenheter'] = [user_preferences.apartments]
+            data_to_predict['Andel BRF'] = [user_preferences.brf]
+            data_to_predict['Lägenhetsålder'] = [user_preferences.apartment_age]
+            data_to_predict['Medianinkomst'] = [user_preferences.mean_income]
+            data_to_predict['Områdestyp'] = [user_preferences.area_type]
+            data_to_predict['Tidigt på plats'] = [user_preferences.early]
+            data_to_predict['Elbilspenetration'] = [user_preferences.ev_penetration]
+            data_to_predict['Skyltning'] = [user_preferences.sign]
 
-        # Normalisera numeriska features (skalas ner till mellan 0 och 1)
-        scaled_columns = pd.DataFrame(self.scaler.transform(data_to_predict[['Invånare', 'Medianinkomst']]),
-                                      columns=['Invånare', 'Medianinkomst'])
-        data_to_predict[['Invånare', 'Medianinkomst']] = scaled_columns
+            # Normalisera numeriska features (skalas ner till mellan 0 och 1)
+            scaled_columns = pd.DataFrame(self.scaler.transform(data_to_predict[['Invånare', 'Medianinkomst']]),
+                                          columns=['Invånare', 'Medianinkomst'])
+            data_to_predict[['Invånare', 'Medianinkomst']] = scaled_columns
 
-        # Normalisera procentuella features
-        # Andel Lägenheter, Andel BRF osv  ligger redan mellan 0-1
+            # Normalisera procentuella features
+            # Andel Lägenheter, Andel BRF osv  ligger redan mellan 0-1
 
-        # Normalisera diskreta kategorier med One-hot encode
-        data_to_predict = pd.get_dummies(data_to_predict,
-                                         columns=['Lägenhetsålder', 'Områdestyp', 'Tidigt på plats', 'Skyltning'],
-                                         drop_first=False)
+            # Normalisera diskreta kategorier med One-hot encode
+            data_to_predict = pd.get_dummies(data_to_predict,
+                                             columns=['Lägenhetsålder', 'Områdestyp', 'Tidigt på plats', 'Skyltning'],
+                                             drop_first=False)
 
-        # Säkerställ att data_to_predict har samma kolumner som träningsdata
-        # Fyll in saknade kolumner (från träning) med 0 om de saknas i nya datan
-        missing_cols = set(self.trained_columns) - set(data_to_predict.columns)
-        for col in missing_cols:
-            data_to_predict[col] = False
+            # Säkerställ att data_to_predict har samma kolumner som träningsdata
+            # Fyll in saknade kolumner (från träning) med 0 om de saknas i nya datat
+            missing_cols = set(self.trained_columns) - set(data_to_predict.columns)
+            for col in missing_cols:
+                data_to_predict[col] = False
 
-        # Ordna kolumnerna i samma ordning som träningsdata
-        data_to_predict = data_to_predict[self.trained_columns]
+            # Ordna kolumnerna i samma ordning som träningsdata
+            data_to_predict = data_to_predict[self.trained_columns]
 
-        # normalized_data = self.scaler.transform(data_to_predict)
-        predictions = self.model.predict(data_to_predict)
-        return QualityRating(np.argmax(predictions))  # Index with the highest value is the enum value
+            # normalized_data = self.scaler.transform(data_to_predict)
+            predictions = self.model.predict(data_to_predict)
+            return QualityRating(np.argmax(predictions))  # Index with the highest value is the enum value
+        except Exception as e:
+            print("Fel vid klassificering")
+            print(e)
 
     def save(self, file_name='model.h5'):
-        file_type = file_name.split('.')[1]
-        if file_type == "keras":
-            # Spara modellen i keras-format
-            self.model.save(file_name)
-            # Spara scaler
-            joblib.dump(self.scaler, 'minmax_scaler.pkl')
-            # Spara normaliseringskonstanten
-            with open('normalization_config.json', 'w') as f:
-                json.dump({'normalization_constant': self.normalization_constant}, f)
-            # Spara historiken
-            with open('training_history.json', 'w') as f:
-                json.dump(self.history, f)
-            # Spara kolumnnamnen
-            with open('columns.pkl', 'wb') as file:
-                pickle.dump(self.trained_columns, file)
+        try:
+            file_type = file_name.split('.')[1]
+            if file_type == "keras":
+                # Spara modellen i keras-format
+                self.model.save(file_name)
+                # Spara scaler
+                joblib.dump(self.scaler, 'minmax_scaler.pkl')
+                # Spara normaliseringskonstanten
+                with open('normalization_config.json', 'w') as f:
+                    json.dump({'normalization_constant': self.normalization_constant}, f)
+                # Spara historiken
+                with open('training_history.json', 'w') as f:
+                    json.dump(self.history, f)
+                # Spara kolumnnamnen
+                with open('columns.pkl', 'wb') as file:
+                    pickle.dump(self.trained_columns, file)
 
-        elif file_type == "h5":
-            # Spara modellen i HDF5-format
-            self.model.save(file_name)
-            # Spara normaliseringskonstanten i samma HDF5-fil
-            with h5py.File(file_name, 'a') as f:
-                f.create_dataset('normalization_constant', data=self.normalization_constant)
-        else:
-            print("Unknown file format")
+            elif file_type == "h5":
+                # Spara modellen i HDF5-format
+                self.model.save(file_name)
+                # Spara normaliseringskonstanten i samma HDF5-fil
+                with h5py.File(file_name, 'a') as f:
+                    f.create_dataset('normalization_constant', data=self.normalization_constant)
+            else:
+                print("Unknown file format")
 
-        print("Modellen sparad")
+            print("Modellen sparad")
+        except Exception as e:
+            print("Fel vid sparande av modell")
+            print(e)
 
     def load(self, file_name="model.h5"):
-        file_type = file_name.split('.')[1]
-        if file_type == "keras":
-            # Ladda modellen
-            self.model = load_model(file_name)
-            self.is_trained = True
-            # Ladda scaler
-            self.scaler = joblib.load('minmax_scaler.pkl')
-            # Ladda normaliseringskonstanten
-            with open('normalization_config.json', 'r') as f:
-                config = json.load(f)
-                self.normalization_constant = config['normalization_constant']
-            # Ladda historiken
-            with open('training_history.json', 'r') as f:
-                self.history = json.load(f)
-            # Ladda kolumnnamnen
-            with open('columns.pkl', 'rb') as file:
-                self.trained_columns = pickle.load(file)
+        try:
+            file_type = file_name.split('.')[1]
+            if file_type == "keras":
+                # Ladda modellen
+                self.model = load_model(file_name)
+                self.is_trained = True
+                # Ladda scaler
+                self.scaler = joblib.load('minmax_scaler.pkl')
+                # Ladda normaliseringskonstanten
+                with open('normalization_config.json', 'r') as f:
+                    config = json.load(f)
+                    self.normalization_constant = config['normalization_constant']
+                # Ladda historiken
+                with open('training_history.json', 'r') as f:
+                    self.history = json.load(f)
+                # Ladda kolumnnamnen
+                with open('columns.pkl', 'rb') as file:
+                    self.trained_columns = pickle.load(file)
 
-        elif file_type == "h5":
-            # Ladda modellen
-            self.model = load_model(file_name)
-            # Ladda normaliseringskonstanten
-            with h5py.File(file_name, 'r') as f:
-                self.normalization_constant = f['normalization_constant'][()]
-        else:
-            print("Unknown file format")
+            elif file_type == "h5":
+                # Ladda modellen
+                self.model = load_model(file_name)
+                # Ladda normaliseringskonstanten
+                with h5py.File(file_name, 'r') as f:
+                    self.normalization_constant = f['normalization_constant'][()]
+            else:
+                print("Unknown file format")
 
-        print("Modellen laddad")
+            print("Modellen laddad")
+        except Exception as e:
+            print("Fel vid laddning av modell")
+            print(e)
 
 
 class UserInterface:
@@ -550,11 +623,15 @@ class UserInterface:
 
     def user_input(self):
         while True:
-            self.user_data.get_user_input(self.location_data.feature_names)
-            rating = self.rating_model.rate(self.user_data)
-            print(rating.name)
-            exit_loop = input(f"\nDo you want to exit (y/n)")
-            if exit_loop.lower() == "y":
+            try:
+                self.user_data.get_user_input(self.location_data.feature_names)
+                rating = self.rating_model.rate(self.user_data)
+                print(rating.name)
+            except Exception as e:
+                print("Fel vid inmatning av data")
+                print(e)
+            exit_loop = input(f"\nAvsluta genom att ange j eller J")
+            if exit_loop.lower() == "j":
                 break
 
     def all_in_sequence(self):
@@ -604,6 +681,10 @@ class UserInterface:
                 self.user_input()
             elif choice == 'all':
                 self.all_in_sequence()
+            elif choice == 's':
+                self.location_data.create_synthetic_data()
+                self.location_data.load("synthetic_data.csv")
+                self.location_data.preprocess()
             elif choice == '0':
                 print("Avslutar programmet.")
                 break
