@@ -47,23 +47,17 @@ class LocationData:
 
     def load(self, file_name="location_training_data.csv"):
         try:
-            # Load data from csv file
-            current_directory = os.path.dirname(__file__)
-            file_path = os.path.join(current_directory, file_name)
+            # Ladda data
+            file_path = os.path.join(os.path.dirname(__file__), "data", file_name)
             self.locations_df = pd.read_csv(file_path, delimiter=';', decimal=',')
 
-            # Drop blank lines
+            # Ta bort tomma rader
             self.locations_df.dropna(how="all", inplace=True)
             self.locations_df.dropna(inplace=True)
 
-            # TODO: Kan man förbättra träningen genom att duplicera datat och på sätt få mer data?
-            #   Skapa eget syntetiskt data.
-            #   Testa att balanser upp de kategorier som det är få av så att vi vet att de kommer med i träningsdata
-            #   och inte slumpmässigt hamnar i testdata.
-            #   Använd pandas cut för att splitta en feature i bins. pandas.get_dummies
-
-            self.locations_df = self.locations_df._append(self.locations_df, ignore_index=True)
-            self.locations_df = self.locations_df._append(self.locations_df, ignore_index=True)
+            # TODO: Jag tror inte man behöver duplicera datat mer syntetiskt data skapat
+            # Duplicera data för att öka datamängden
+            # self.locations_df = pd.concat([self.locations_df] * 3, ignore_index=True)
 
             self.features_df = pd.DataFrame(self.locations_df[
                                                 ["Invånare", "Medianinkomst",
@@ -85,114 +79,118 @@ class LocationData:
                 print(f"Det finns fler unika labels i datat än de {len(QualityRating)} som stöds")
 
             print(f"Data laddat \nAntal datapunkter {len(self.locations_df)}")
+        except FileNotFoundError:
+            print(f"Fil saknas: {file_name}")
+        except pd.errors.ParserError:
+            print(f"Fel vid parsning av CSV-filen: {file_name}")
         except Exception as e:
-            print("Fel vid inläsning av data")
-            print(e)
+            print(f"Fel vid inläsning av data: {e}")
 
     def preprocess(self):
         try:
-            # Koda kategoriska variabler
-            # Klassificeringarna blir numeriska värden tagna från vår enum QualityRating
+            # Label-klassificeringen konverteras till numeriska värden tagna från vår enum QualityRating
             self.target_df = self.target_df.apply(lambda x: QualityRating[x].value)
 
-            # För att minska påverkan från "Invånare" divideras den med ett stort tal, som 10 000, innan MinMaxScaler.
-            # self.features_df['Invånare'] = self.features_df['Invånare'] / 10000
-            # self.features_df.loc[:, 'Invånare'] = self.features_df['Invånare'] / 10000
-            # self.features_df.loc[:, 'Medianinkomst'] = self.features_df['Medianinkomst'] / 10000
-            # self.features_df['Invånare'] = self.features_df['Invånare'].apply(lambda x: x/1000)
-            # self.features_df["Invånare"] = self.features_df.apply(lambda x: x["Invånare"]/1000)
-            # for i in range(len(self.features_df)):
-            #     self.features_df['Invånare'].values[i] = self.features_df['Invånare'].values[i] / 10_000
-
             # Olika features är av olika typer och bör normaliseras på olika sätt.
+            numerical_columns = ['Invånare', 'Medianinkomst']
+            percentage_columns = ['Andel lägenheter', 'Andel BRF', 'Elbilspenetration']
+            category_columns = ['Lägenhetsålder', 'Områdestyp', 'Tidigt på plats', 'Skyltning']
 
-            # Normalisera numeriska features
-            # Alla numeriska värden skalas ner till mellan 0 och 1.
-            scaled_columns = pd.DataFrame(self.scaler.fit_transform(self.features_df[['Invånare', 'Medianinkomst']]),
-                                          columns=['Invånare', 'Medianinkomst'])
-            self.features_df[['Invånare', 'Medianinkomst']] = scaled_columns
+            # Normalisera numeriska features mellan 0 och 1
+            self.features_df[numerical_columns] = self.scaler.fit_transform(self.features_df[numerical_columns])
 
-            # Normalisera procentuella features
-            # Andel Lägenheter, Andel BRF osv  ligger redan mellan 0-1
+            # Normalisera procentuella features (bör redan ligga mellan 0-1)
+            self.features_df[percentage_columns] = self.features_df[percentage_columns].clip(0, 1)
 
-            # Normalisera diskreta kategorier med One-hot encode
-            self.features_df = pd.get_dummies(self.features_df,
-                                              columns=['Lägenhetsålder', 'Områdestyp', 'Tidigt på plats', 'Skyltning'],
-                                              drop_first=True)
+            # Normalisera diskreta kategorier med One-hot encoding
+            self.features_df = pd.get_dummies(self.features_df, columns=category_columns, drop_first=False)
+            # self.features_df = tf.keras.utils.to_categorical(self.features_df[category_columns])
+
             self.number_of_features = self.features_df.shape[1]
-            # self.features_df = tf.keras.utils.to_categorical(self.features_df['Lägenhetsålder', 'Områdestyp'])
 
             # Dela upp data i 20% testdata, 80% träningsdata
             train_test_split_data = train_test_split(self.features_df, self.target_df, test_size=0.2, random_state=42)
 
             # X är features, y är labels
-            features_x_train = train_test_split_data[0]  # Träningsdata
-            features_x_test = train_test_split_data[1]  # Testdata
-            labels_y_train = train_test_split_data[2]  # Tränings-labels
-            labels_y_test = train_test_split_data[3]  # Test-labels
+            self.features_X_train = train_test_split_data[0]  # Träningsdata
+            self.features_X_test = train_test_split_data[1]  # Testdata
+            self.labels_y_train = train_test_split_data[2]  # Tränings-labels
+            self.labels_y_test = train_test_split_data[3]  # Test-labels
 
-            # Konvertera etiketter till one-hot encoding
-            # Nödvändigt för fler flerklass-klassificering
+            # Ett annat sätt att tilldela variablerna ovan
+            self.features_X_train, self.features_X_test, self.labels_y_train, self.labels_y_test = train_test_split_data
+
+            # Konvertera etiketter (labels) till one-hot encoding
+            # Nödvändigt för flerklass-klassificering
             # Kategori 0 blir [1, 0, 0]
             # Kategori 1 blir [0, 1, 0]
             # Kategori 2 blir [0, 0, 1] osv.
-            self.labels_y_train = tf.keras.utils.to_categorical(labels_y_train)
-            self.labels_y_test = tf.keras.utils.to_categorical(labels_y_test)
-
-            self.features_X_train = features_x_train
-            self.features_X_test = features_x_test
+            self.labels_y_train = tf.keras.utils.to_categorical(self.labels_y_train)
+            self.labels_y_test = tf.keras.utils.to_categorical(self.labels_y_test)
 
             print("Data förberett för träning")
             print(self.features_X_train.columns.to_list())
-            print(f"Antal datapunkter träningsdata {len(features_x_train)}, Max-värde {np.max(features_x_train)} ")
-            print(f"Antal datapunkter testdata {len(features_x_test)}, Max-värde {np.max(features_x_test)} ")
+            print(
+                f"Antal datapunkter träningsdata {len(self.features_X_train)}, Max-värde {np.max(self.features_X_train)}")
+            print(f"Antal datapunkter testdata {len(self.features_X_test)}, Max-värde {np.max(self.features_X_test)}")
         except Exception as e:
-            print("Fel vid förberedelse av data")
-            print(e)
+            print(f"Fel vid förberedelse av data: {e}")
 
     def create_synthetic_data(self, file_name="location_training_data.csv"):
-        # Läs in det ursprungliga datat
-        current_directory = os.path.dirname(__file__)
-        file_path = os.path.join(current_directory, file_name)
+        file_path = os.path.join(os.path.dirname(__file__), "data", file_name)
         df = pd.read_csv(file_path, delimiter=';', decimal=',')
 
-        # Bestäm hur många gånger du vill öka datasetet
+        # Antal dupliceringar av datasetet
         n_copies = 10
 
         # Skapa en lista för att lagra syntetiskt data
         synthetic_data = []
 
-        # För varje rad i originaldata
-        for i in range(n_copies):
-            for _, row in df.iterrows():
-                # Skapa en kopia av raden
-                synthetic_row = row.copy()
+        try:
+            # För varje rad i originaldata
+            for i in range(n_copies):
+                for _, row in df.iterrows():
+                    # Skapa en kopia av raden
+                    synthetic_row = row.copy()
 
-                # Addera Gaussian Noise till de numeriska kolumnerna
-                synthetic_row['Invånare'] = int(max(0, row['Invånare'] + np.random.normal(0, row['Invånare'] * 0.05)))
-                synthetic_row['Medianinkomst'] = int(max(0, row['Medianinkomst'] + np.random.normal(0, row[
-                    'Medianinkomst'] * 0.05)))
-                synthetic_row['Andel lägenheter'] = round(
-                    min(1, max(0, row['Andel lägenheter'] + np.random.normal(0, 0.05))), 2)
-                synthetic_row['Andel BRF'] = round(min(1, max(0, row['Andel BRF'] + np.random.normal(0, 0.05))), 2)
-                synthetic_row['Elbilspenetration'] = round(
-                    min(1, max(0, row['Elbilspenetration'] + np.random.normal(0, 0.05))), 2)
-                synthetic_row['kWh'] = round(max(0, row['kWh'] + np.random.normal(0, row['kWh'] * 0.1)), 2)
-                synthetic_row['Kostnad/LP'] = int(
-                    max(0, row['Kostnad/LP'] + np.random.normal(0, row['Kostnad/LP'] * 0.1)))
-                synthetic_row['# of LP'] = int(max(0, int(row['# of LP'] + np.random.normal(0, 1))))  # Hela tal
+                    # Addera Gaussian Noise till de numeriska kolumnerna
+                    # Numeriska heltal
+                    synthetic_row['Invånare'] = int(
+                        max(0, row['Invånare'] + np.random.normal(0, row['Invånare'] * 0.05)))
+                    synthetic_row['Medianinkomst'] = int(max(0, row['Medianinkomst'] + np.random.normal(0, row[
+                        'Medianinkomst'] * 0.05)))
 
-                # Lägg till den syntetiska raden i listan
-                synthetic_data.append(synthetic_row)
+                    # Procentuella värden
+                    synthetic_row['Andel lägenheter'] = round(
+                        min(1, max(0, row['Andel lägenheter'] + np.random.normal(0, 0.05))), 2)
+                    synthetic_row['Andel BRF'] = round(min(1, max(0, row['Andel BRF'] + np.random.normal(0, 0.05))), 2)
+                    synthetic_row['Elbilspenetration'] = round(
+                        min(1, max(0, row['Elbilspenetration'] + np.random.normal(0, 0.05))), 2)
 
-        # Konvertera listan till en DataFrame
-        synthetic_df = pd.DataFrame(synthetic_data)
+                    # synthetic_row['kWh'] = round(max(0, row['kWh'] + np.random.normal(0, row['kWh'] * 0.1)), 2)
+                    # synthetic_row['Kostnad/LP'] = int(
+                    #     max(0, row['Kostnad/LP'] + np.random.normal(0, row['Kostnad/LP'] * 0.1)))
+                    # synthetic_row['# of LP'] = int(max(0, int(row['# of LP'] + np.random.normal(0, 1))))
 
-        # Kombinera originaldata med syntetiskt data
-        combined_df = pd.concat([df, synthetic_df], ignore_index=True)
+                    # Lägg till den syntetiska raden i listan
+                    synthetic_data.append(synthetic_row)
 
-        # Spara till ny CSV-fil
-        combined_df.to_csv(os.path.join(current_directory, "synthetic_data.csv"), index=False, sep=";", decimal=',')
+            # Konvertera listan till en DataFrame
+            synthetic_df = pd.DataFrame(synthetic_data)
+
+            # Kombinera originaldata med syntetiskt data
+            combined_df = pd.concat([df, synthetic_df], ignore_index=True)
+
+            # Spara till ny CSV-fil
+            file_path = os.path.join(os.path.dirname(__file__), "data", "synthetic_data.csv")
+            combined_df.to_csv(file_path, index=False, sep=";", decimal=',')
+
+        except FileNotFoundError:
+            print(f"Fil saknas: {file_name}")
+        except pd.errors.ParserError:
+            print(f"Fel vid parsning av CSV-filen: {file_name}")
+        except Exception as e:
+            print(f"Fel vid skapande av syntetisk data: {e}")
 
 
 class UserData:
@@ -345,6 +343,9 @@ class ClassificationModel:
         #   Hur vet jag hur många lager jag skall ha?
         #   Utvärdera keras_tuner
         #   Testa att lägga till ett Dropout lager innan sista output layer.
+        #   Testa  med olika lagerdjup och antal neuroner
+        #   Testa att inkludera BatchNormalization efter Dense-lager för stabilare inlärning.
+        #   Testa att utöka metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()]
         try:
             self.model = tf.keras.models.Sequential([
                 tf.keras.layers.Input(shape=(self.location_data.number_of_features,)),
@@ -361,8 +362,7 @@ class ClassificationModel:
 
             print("Modellen Keras Sequential har skapats och kompilerats.")
         except Exception as e:
-            print("Fel vid uppsättning av modell")
-            print(e)
+            print(f"Fel vid uppsättning av modell: {e}")
 
     def train(self, verbose=1):
         # Verbosity mode: 0 = silent, 1 = progress bar, 2 = one line per epoch.
@@ -383,7 +383,7 @@ class ClassificationModel:
               men det beror på vilken typ av problem du arbetar med. Ju lägre, desto bättre.
         """
 
-        target_accuracy = 0.50
+        target_accuracy = 0.70
         num_epochs = 100
         loop = 0
 
@@ -437,8 +437,7 @@ class ClassificationModel:
             print("Träningsnoggrannhet (accuracy): Mått på hur bra modellen lär sig från träningsdata.")
             print("Dvs hur många procent av träningsdata som modellen klassificerade korrekt.")
         except Exception as e:
-            print("Fel vid träning av modell")
-            print(e)
+            print(f"Fel vid träning av modell: {e}")
 
     def evaluation_graph(self):
         # Visualisera träningshistorik
@@ -471,8 +470,7 @@ class ClassificationModel:
             plt.tight_layout()
             plt.show()
         except Exception as e:
-            print("Fel vid visning av graf")
-            print(e)
+            print(f"Fel vid visning av graf: {e}")
 
     def evaluate(self):
         # Utvärdera modellen med hjälp av testdata
@@ -497,8 +495,7 @@ class ClassificationModel:
                 print(f"Result: {np.argmax(self.location_data.labels_y_test[i]) == np.argmax(prediction)}")
                 print()
         except Exception as e:
-            print("Fel vid utvärdering av modell")
-            print(e)
+            print(f"Fel vid utvärdering av modell: {e}")
 
     def rate(self, user_preferences: UserData):
         # TODO: Skapa en array med alla värden från user_preferences
@@ -519,21 +516,24 @@ class ClassificationModel:
             data_to_predict['Elbilspenetration'] = [user_preferences.ev_penetration]
             data_to_predict['Skyltning'] = [user_preferences.sign]
 
+            # Olika features är av olika typer och bör normaliseras på olika sätt.
+            numerical_columns = ['Invånare', 'Medianinkomst']
+            percentage_columns = ['Andel lägenheter', 'Andel BRF', 'Elbilspenetration']
+            category_columns = ['Lägenhetsålder', 'Områdestyp', 'Tidigt på plats', 'Skyltning']
+
             # Normalisera numeriska features (skalas ner till mellan 0 och 1)
-            scaled_columns = pd.DataFrame(self.scaler.transform(data_to_predict[['Invånare', 'Medianinkomst']]),
-                                          columns=['Invånare', 'Medianinkomst'])
-            data_to_predict[['Invånare', 'Medianinkomst']] = scaled_columns
+            data_to_predict[numerical_columns] = self.scaler.fit_transform(data_to_predict[numerical_columns])
 
             # Normalisera procentuella features
             # Andel Lägenheter, Andel BRF osv  ligger redan mellan 0-1
 
             # Normalisera diskreta kategorier med One-hot encode
             data_to_predict = pd.get_dummies(data_to_predict,
-                                             columns=['Lägenhetsålder', 'Områdestyp', 'Tidigt på plats', 'Skyltning'],
+                                             columns=category_columns,
                                              drop_first=False)
 
             # Säkerställ att data_to_predict har samma kolumner som träningsdata
-            # Fyll in saknade kolumner (från träning) med 0 om de saknas i nya datat
+            # Fyll in saknade kolumner (från träning) med False om de saknas i nya datat
             missing_cols = set(self.trained_columns) - set(data_to_predict.columns)
             for col in missing_cols:
                 data_to_predict[col] = False
@@ -545,74 +545,75 @@ class ClassificationModel:
             predictions = self.model.predict(data_to_predict)
             return QualityRating(np.argmax(predictions))  # Index with the highest value is the enum value
         except Exception as e:
-            print("Fel vid klassificering")
-            print(e)
+            print(f"Fel vid klassificering: {e}")
 
     def save(self, file_name='model.h5'):
         try:
+            storage = "storage"
+            if not os.path.exists(storage):
+                os.makedirs(storage)
             file_type = file_name.split('.')[1]
             if file_type == "keras":
                 # Spara modellen i keras-format
-                self.model.save(file_name)
+                self.model.save(os.path.join(storage, file_name))
                 # Spara scaler
-                joblib.dump(self.scaler, 'minmax_scaler.pkl')
+                joblib.dump(self.scaler, os.path.join(storage, 'minmax_scaler.pkl'))
                 # Spara normaliseringskonstanten
-                with open('normalization_config.json', 'w') as f:
+                with open(os.path.join(storage, 'normalization_config.json'), 'w') as f:
                     json.dump({'normalization_constant': self.normalization_constant}, f)
                 # Spara historiken
-                with open('training_history.json', 'w') as f:
+                with open(os.path.join(storage, 'training_history.json'), 'w') as f:
                     json.dump(self.history, f)
                 # Spara kolumnnamnen
-                with open('columns.pkl', 'wb') as file:
-                    pickle.dump(self.trained_columns, file)
+                with open(os.path.join(storage, 'columns.pkl'), 'wb') as f:
+                    pickle.dump(self.trained_columns, f)
 
             elif file_type == "h5":
                 # Spara modellen i HDF5-format
-                self.model.save(file_name)
+                self.model.save(os.path.join(storage, file_name))
                 # Spara normaliseringskonstanten i samma HDF5-fil
-                with h5py.File(file_name, 'a') as f:
+                with h5py.File(os.path.join(storage, file_name), 'a') as f:
                     f.create_dataset('normalization_constant', data=self.normalization_constant)
             else:
                 print("Unknown file format")
 
             print("Modellen sparad")
         except Exception as e:
-            print("Fel vid sparande av modell")
-            print(e)
+            print(f"Fel vid sparande av modell: {e}")
 
     def load(self, file_name="model.h5"):
         try:
+            storage = "storage"
             file_type = file_name.split('.')[1]
             if file_type == "keras":
                 # Ladda modellen
-                self.model = load_model(file_name)
+                self.model = load_model(os.path.join(storage, file_name))
                 self.is_trained = True
                 # Ladda scaler
-                self.scaler = joblib.load('minmax_scaler.pkl')
+                self.scaler = joblib.load(os.path.join(storage, 'minmax_scaler.pkl'))
                 # Ladda normaliseringskonstanten
-                with open('normalization_config.json', 'r') as f:
+                with open(os.path.join(storage, 'normalization_config.json'), 'r') as f:
                     config = json.load(f)
                     self.normalization_constant = config['normalization_constant']
                 # Ladda historiken
-                with open('training_history.json', 'r') as f:
+                with open(os.path.join(storage, 'training_history.json'), 'r') as f:
                     self.history = json.load(f)
                 # Ladda kolumnnamnen
-                with open('columns.pkl', 'rb') as file:
-                    self.trained_columns = pickle.load(file)
+                with open(os.path.join(storage, 'columns.pkl'), 'rb') as f:
+                    self.trained_columns = pickle.load(f)
 
             elif file_type == "h5":
                 # Ladda modellen
-                self.model = load_model(file_name)
+                self.model = load_model(os.path.join(storage, file_name))
                 # Ladda normaliseringskonstanten
-                with h5py.File(file_name, 'r') as f:
+                with h5py.File(os.path.join(storage, file_name), 'r') as f:
                     self.normalization_constant = f['normalization_constant'][()]
             else:
                 print("Unknown file format")
 
             print("Modellen laddad")
         except Exception as e:
-            print("Fel vid laddning av modell")
-            print(e)
+            print(f"Fel vid laddning av modell: {e}")
 
 
 class UserInterface:
@@ -628,8 +629,7 @@ class UserInterface:
                 rating = self.rating_model.rate(self.user_data)
                 print(rating.name)
             except Exception as e:
-                print("Fel vid inmatning av data")
-                print(e)
+                print(f"Fel vid inmatning av data: {e}")
             exit_loop = input(f"\nAvsluta genom att ange j eller J")
             if exit_loop.lower() == "j":
                 break
