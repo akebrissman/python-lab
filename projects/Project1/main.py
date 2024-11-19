@@ -3,7 +3,6 @@ import os
 import pickle
 from enum import Enum
 
-import h5py
 import joblib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -39,7 +38,6 @@ class LocationData:
         self.number_of_rows = 0
         self.number_of_features = 0
         self.number_of_output_categories = 0
-        self.normalization_constant = 1
         self.scaler = MinMaxScaler()
 
     def is_loaded(self) -> bool:
@@ -129,13 +127,15 @@ class LocationData:
             self.labels_y_test = tf.keras.utils.to_categorical(self.labels_y_test)
 
             print("Data förberett för träning")
-            print(self.features_X_train.columns.to_list())
-            print(
-                f"Antal datapunkter träningsdata {len(self.features_X_train)}, Max-värde {np.max(self.features_X_train)}")
-            print(f"Antal datapunkter testdata {len(self.features_X_test)}, Max-värde {np.max(self.features_X_test)}")
+            print(f"Kolumner: {self.features_X_train.columns.to_list()}")
+            print(f"Antal datapunkter träningsdata {len(self.features_X_train)}, "
+                  f"Max-värde {np.max(self.features_X_train)}")
+            print(f"Antal datapunkter testdata {len(self.features_X_test)}, "
+                  f"Max-värde {np.max(self.features_X_test)}")
         except Exception as e:
             print(f"Fel vid förberedelse av data: {e}")
 
+    # noinspection PyMethodMayBeStatic
     def create_synthetic_data(self, file_name="location_training_data.csv"):
         file_path = os.path.join(os.path.dirname(__file__), "data", file_name)
         df = pd.read_csv(file_path, delimiter=';', decimal=',')
@@ -320,21 +320,20 @@ class ClassificationModel:
         self.model: tf.keras.models.Sequential = None
         self.history = None
         self.trained_columns = []
-        self.normalization_constant = location_data.normalization_constant if location_data else 1
         self.scaler = location_data.scaler if location_data else None
         self.is_trained = False
 
-    def setup(self):
+    def setup(self, number_of_dence_layers=2, use_dropout_layer=False):
         # Skapar en enkel sekventiell modell, en linjär stack av lager för detta klassificerings-problem.
         # Grundläggande typ av neural network, varje lager kopplat till nästa
         # Input-Layer: Specificera input-shape = antal features för varje datapunkt, d.v.s antal kolumner
         # Hidden Layer 1: 10 noder per lager, bestäms efter experimentering
         # Hidden Layer 2: Fler lager, mer kapacitet att lära sig
+        # Dropout Layer (optional) se nedan
         # Output Layer: Sista lagret har lika många noder som antalet target-klasser,
-        # d.v.s modellen försöker välja mellan 3 kategorier för varje data-sample.
+        #   d.v.s modellen försöker välja mellan 5 kategorier för varje data-sample.
 
-        # Dropout hanterar overfitting och stänger av 50% av slumpade neuroner under träningen.
-        # Vi vill inte bero för mycket på enstaka features/detaljer för att avgöra siffror.
+        # Dropout layer hanterar overfitting och stänger av 50% av slumpade neuroner under träningen.
         # 0.5 är aggressivt nog för att begränsa overfitting, litet nog för att inte hindra inlärning.
         # Ungefär som att täcka över delar av datat under träning, så nätverket måste lära sig fler sätt att känna
         # igen mönster.
@@ -346,19 +345,33 @@ class ClassificationModel:
         #   Testa  med olika lagerdjup och antal neuroner
         #   Testa att inkludera BatchNormalization efter Dense-lager för stabilare inlärning.
         #   Testa att utöka metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()]
+
+        layers = []
+
         try:
-            self.model = tf.keras.models.Sequential([
-                tf.keras.layers.Input(shape=(self.location_data.number_of_features,)),
-                tf.keras.layers.Dense(units=10, activation='relu', ),
-                tf.keras.layers.Dense(units=10, activation='relu', ),
-                # tf.keras.layers.Dropout(0.5),
-                tf.keras.layers.Dense(units=self.location_data.number_of_output_categories, activation='softmax', ),
-            ])
+            # self.model = tf.keras.models.Sequential([
+            #     tf.keras.layers.Input(shape=(self.location_data.number_of_features,)),
+            #     tf.keras.layers.Dense(units=10, activation='relu', ),
+            #     tf.keras.layers.Dense(units=10, activation='relu', ),
+            #     # tf.keras.layers.Dropout(0.5),
+            #     tf.keras.layers.Dense(units=self.location_data.number_of_output_categories, activation='softmax', ),
+            # ])
+            layers.append(tf.keras.layers.Input(shape=(self.location_data.number_of_features,)))
+            for i in range(number_of_dence_layers):
+                layers.append(tf.keras.layers.Dense(units=10, activation='relu'))
+            if use_dropout_layer:
+                layers.append(tf.keras.layers.Dropout(0.5))
+            layers.append(tf.keras.layers.Dense(units=self.location_data.number_of_output_categories,
+                                                activation='softmax'))
+
+            self.model = tf.keras.models.Sequential(layers)
 
             # TODO: undersök om jag skall ha fler metrics
             self.model.compile(optimizer='adam',
                                loss='categorical_crossentropy',
                                metrics=['accuracy'])
+
+            print(self.model.summary())
 
             print("Modellen Keras Sequential har skapats och kompilerats.")
         except Exception as e:
@@ -415,7 +428,6 @@ class ClassificationModel:
                       f"Valideringsnoggrannhet {validation_accuracy:.2%} \n"
                       f"Träningsnoggrannhet {training_accuracy:.2%}  \n")
 
-                # TODO: Skall man testa mot validation_accuracy eller training_accuracy?
                 if validation_accuracy >= target_accuracy:
                     self.is_trained = True
                     break
@@ -430,8 +442,7 @@ class ClassificationModel:
                         break
 
             print(f"Träning av modellen är klar.")
-            print(
-                "Valideringsnoggrannhet (val_accuracy): Mått på hur bra modellen generaliserar till nya, osedda data.")
+            print("Valideringsnoggrannhet (val_accuracy): Mått på hur bra modellen generaliserar till ny, osedda data.")
             print("Dvs hur många procent av valideringsdata (osedd data) som modellen klassificerar korrekt")
             print("")
             print("Träningsnoggrannhet (accuracy): Mått på hur bra modellen lär sig från träningsdata.")
@@ -484,15 +495,17 @@ class ClassificationModel:
             if test_loss > .2:
                 print("VARNING, Testförlusten indikerar låg säkerhet och potentiellt problematiska förutsägelser.")
 
-            # Gör prediktioner på de tre första raderna från test datat
-            sample_predictions = self.model.predict(self.location_data.features_X_test[:3], verbose=1)
+            # Gör prediktioner på de fem första raderna från test datat
+            sample_predictions = self.model.predict(self.location_data.features_X_test[:5], verbose=1)
             # TODO: Skriv ut vilka labels som prediction gick bra respektive dålig för.
-            print("\nSample predictions:")
+            print("\nTest av  'predictions':")
             for i, prediction in enumerate(sample_predictions):
-                print(f"Example {i + 1}: {prediction}")
-                print(f"Predicted class: {np.argmax(prediction)}")
-                print(f"Actual class: {np.argmax(self.location_data.labels_y_test[i])}")
-                print(f"Result: {np.argmax(self.location_data.labels_y_test[i]) == np.argmax(prediction)}")
+                print(f"Prediction {i + 1}: {prediction}")
+                print(f"Predicted category: {np.argmax(prediction)}, "
+                      f"{QualityRating(np.argmax(prediction)).name}")
+                print(f"Expected category: {np.argmax(self.location_data.labels_y_test[i])}, "
+                      f"{QualityRating(np.argmax(self.location_data.labels_y_test[i])).name}")
+                print(f"Result {np.argmax(self.location_data.labels_y_test[i]) == np.argmax(prediction)}")
                 print()
         except Exception as e:
             print(f"Fel vid utvärdering av modell: {e}")
@@ -556,26 +569,20 @@ class ClassificationModel:
             if file_type == "keras":
                 # Spara modellen i keras-format
                 self.model.save(os.path.join(storage, file_name))
-                # Spara scaler
-                joblib.dump(self.scaler, os.path.join(storage, 'minmax_scaler.pkl'))
-                # Spara normaliseringskonstanten
-                with open(os.path.join(storage, 'normalization_config.json'), 'w') as f:
-                    json.dump({'normalization_constant': self.normalization_constant}, f)
-                # Spara historiken
-                with open(os.path.join(storage, 'training_history.json'), 'w') as f:
-                    json.dump(self.history, f)
-                # Spara kolumnnamnen
-                with open(os.path.join(storage, 'columns.pkl'), 'wb') as f:
-                    pickle.dump(self.trained_columns, f)
-
             elif file_type == "h5":
                 # Spara modellen i HDF5-format
                 self.model.save(os.path.join(storage, file_name))
-                # Spara normaliseringskonstanten i samma HDF5-fil
-                with h5py.File(os.path.join(storage, file_name), 'a') as f:
-                    f.create_dataset('normalization_constant', data=self.normalization_constant)
             else:
-                print("Unknown file format")
+                print("Okänt filformat för modellen")
+
+            # Spara scaler
+            joblib.dump(self.scaler, os.path.join(storage, 'minmax_scaler.pkl'))
+            # Spara historiken
+            with open(os.path.join(storage, 'training_history.json'), 'w') as f:
+                json.dump(self.history, f)
+            # Spara kolumnnamnen
+            with open(os.path.join(storage, 'columns.pkl'), 'wb') as f:
+                pickle.dump(self.trained_columns, f)
 
             print("Modellen sparad")
         except Exception as e:
@@ -589,31 +596,24 @@ class ClassificationModel:
                 # Ladda modellen
                 self.model = load_model(os.path.join(storage, file_name))
                 self.is_trained = True
-                # Ladda scaler
-                self.scaler = joblib.load(os.path.join(storage, 'minmax_scaler.pkl'))
-                # Ladda normaliseringskonstanten
-                with open(os.path.join(storage, 'normalization_config.json'), 'r') as f:
-                    config = json.load(f)
-                    self.normalization_constant = config['normalization_constant']
-                # Ladda historiken
-                with open(os.path.join(storage, 'training_history.json'), 'r') as f:
-                    self.history = json.load(f)
-                # Ladda kolumnnamnen
-                with open(os.path.join(storage, 'columns.pkl'), 'rb') as f:
-                    self.trained_columns = pickle.load(f)
-
             elif file_type == "h5":
                 # Ladda modellen
                 self.model = load_model(os.path.join(storage, file_name))
-                # Ladda normaliseringskonstanten
-                with h5py.File(os.path.join(storage, file_name), 'r') as f:
-                    self.normalization_constant = f['normalization_constant'][()]
             else:
-                print("Unknown file format")
+                print("Okänt filformat för modellen")
+
+            # Ladda scaler
+            self.scaler = joblib.load(os.path.join(storage, 'minmax_scaler.pkl'))
+            # Ladda historiken
+            with open(os.path.join(storage, 'training_history.json'), 'r') as f:
+                self.history = json.load(f)
+            # Ladda kolumnnamnen
+            with open(os.path.join(storage, 'columns.pkl'), 'rb') as f:
+                self.trained_columns = pickle.load(f)
 
             print("Modellen laddad")
         except Exception as e:
-            print(f"Fel vid laddning av modell: {e}")
+            print(f"Fel vid inläsning av modell: {e}")
 
 
 class UserInterface:
@@ -630,7 +630,7 @@ class UserInterface:
                 print(rating.name)
             except Exception as e:
                 print(f"Fel vid inmatning av data: {e}")
-            exit_loop = input(f"\nAvsluta genom att ange j eller J")
+            exit_loop = input(f"\nVill du avsluta så ange j/J")
             if exit_loop.lower() == "j":
                 break
 
@@ -644,14 +644,18 @@ class UserInterface:
 
         self.rating_model.evaluate()
 
+    @staticmethod
+    def separator():
+        return "=" * 100
+
     def main_menu(self):
         print("Välkommen till områdesklassificering!")
-
         while True:
-            print("\n==============================")
+            print(self.separator(), "\n")
             print("Ange funktion:")
-            print("1. Ladda data för träning")
-            print("2. Skapa modell") if self.location_data.is_loaded() else None
+            print("1. Ladda originaldata för träning - lägg till 's' för att skapa syntetisk data t ex '1s'")
+            print("2. Skapa modell                   - lägg till 'd' för Drop out layer och "
+                  "'l<layers>' för antal Dense layers t ex '2d l5')") if self.location_data.is_loaded() else None
             print("3. Träna modell") if self.rating_model.model else None
             print("4. Utvärdera modell") if self.rating_model.is_trained and self.location_data.is_loaded() else None
             print("5. Visa graf") if self.rating_model.is_trained else None
@@ -661,12 +665,21 @@ class UserInterface:
             print("0. Avsluta")
 
             choice = input("Välj ett alternativ: ")
-            print("==============================\n")
+            print(self.separator())
             if choice == '1':
                 self.location_data.load()
                 self.location_data.preprocess()
+            elif choice == '1s':
+                self.location_data.create_synthetic_data()
+                self.location_data.load("synthetic_data.csv")
+                self.location_data.preprocess()
             elif choice == '2':
                 self.rating_model.setup()
+            elif choice[0] == '2' and len(choice) > 1:
+                pos = choice.find('l')
+                layers = int(choice[pos + 1]) if pos > 0 else 2
+                dropout_layer = choice.find('d') > 0
+                self.rating_model.setup(number_of_dence_layers=layers, use_dropout_layer=dropout_layer)
             elif choice == '3':
                 self.rating_model.train(verbose=1)
             elif choice == '4':
@@ -681,10 +694,6 @@ class UserInterface:
                 self.user_input()
             elif choice == 'all':
                 self.all_in_sequence()
-            elif choice == 's':
-                self.location_data.create_synthetic_data()
-                self.location_data.load("synthetic_data.csv")
-                self.location_data.preprocess()
             elif choice == '0':
                 print("Avslutar programmet.")
                 break
