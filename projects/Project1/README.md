@@ -10,6 +10,13 @@ There are two distinct parts:
 1. Training. The model is trained with location data and when you are satisfied the model is stored. 
 2. Predicting. A stored model can be loaded, and by giving som location data it can predict (classify) if this location is bad, poor, fair, good or excellent. 
 
+### Setup
+      cd python-lab/projects/project1
+      python -m venv venv
+      source venv/bin/activate
+      # venv/Scripts/activate
+      pip install -r requirements.txt
+
 ### Data
 Location features: Number of people, Avg income, Percentage of apartments, Percentage of flats, Percentages of EV,  Age of apartments, Type, Competition, Signage.\
 Location labels: BAD, POOR, FAIR, GOOD, or EXCELLENT
