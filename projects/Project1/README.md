@@ -7,30 +7,11 @@ Location Rating
 ### Application Description
 The purpose of this application is to let a trained AI model help predicting if a location is good or bad based on some critera.
 There are two distinct parts:
-1. Training. The model is trained with location data and when you are satisfied the model is stored. 
-2. Predicting. A stored model can be loaded, and by giving som location data it can predict (classify) if this location is bad, poor, fair, good or excellent. 
-
-### Setup
-      cd python-lab/projects/project1
-      python -m venv venv
-      source venv/bin/activate
-      # venv/Scripts/activate
-      pip install -r requirements.txt
-
-### Data
-Location features: Number of people, Avg income, Percentage of apartments, Percentage of flats, Percentages of EV,  Age of apartments, Type, Competition, Signage.\
-Location labels: BAD, POOR, FAIR, GOOD, or EXCELLENT
-
-### Data source
-A training set 'location_training_data.csv' is part of this project
-This file can be replaced with production data when it is time to run it in a production setup.
-
-### Model
-TensorFlow Keras Sequential \
-See: https://www.tensorflow.org/api_docs/python/tf/keras/Sequential
+1. Training. The model can be trained with location data and stored, when you are satisfied. 
+2. Predicting. A stored model can be loaded, and by entering new location data it can predict (classify) it as bad, poor, fair, good or excellent. 
 
 ### Functionality
-* Data load from CSV
+* Data load from CSV (With or without synthetic data)
 * Data preprocessing. (Feature extraction, encoding, normalization)
 * Model creation (TensorFlow Keras Sequential)
 * Model training 
@@ -40,8 +21,28 @@ See: https://www.tensorflow.org/api_docs/python/tf/keras/Sequential
 * Model prediction with user data
 * Command line interface to manage the functionality
 
+* ### Setup
+      cd python-lab/projects/project1
+      python -m venv venv
+      source venv/bin/activate
+      # venv/Scripts/activate
+      pip install -r requirements.txt
+
+### Data source
+A training set 'location_training_data.csv' is part of this project.
+This file can be replaced with production data when it is time to run it in a production setup.
+
+### Data
+The following columns, from the file 'location_training_data.csv', are used as features and label. \
+Features columns: Number of people, Avg income, Percentage of apartments, Percentage of flats, Percentages of EV,  Age of apartments, Type, Competition, Signage.\
+Label column: Rating with the distinct values BAD, POOR, FAIR, GOOD, EXCELLENT
+
+### Model
+The model TensorFlow Keras Sequential is used in this project. \
+See: https://www.tensorflow.org/api_docs/python/tf/keras/Sequential
+
 ### Limitations
-* Small dataset, synthetic data must be used
+* Small dataset, synthetic data must be used for a good result
 * Only support of command line interface (No web UI) 
 
 ### Requirements
@@ -49,7 +50,7 @@ See: https://www.tensorflow.org/api_docs/python/tf/keras/Sequential
 #### Data requirements
 1. Location features (CSV File with the following data per location)
    * Number of people (Number of people living in the area)
-   * Avg income (The avarage income of the people in the area)
+   * Avg income (The average income of the people in the area)
    * Percentage of apartments (% of apartments)
    * Percentage of flats (% of owned flats)
    * Percentages of EV (% of Electric Vehicles)
@@ -75,11 +76,11 @@ See: https://www.tensorflow.org/api_docs/python/tf/keras/Sequential
 ##### Modules #####
 
 * pandas: Data manipulation and analysis
-* numpy: numerical operations
-* scikit-learn: machine learning algorithms and preprocessing
-* matplotlib: 
-* tensorflow: 
-* MinMaxScaler: 
+* numpy: Numerical operations
+* scikit-learn: Machine learning algorithms and preprocessing
+* matplotlib: Used for the evaluation graphs
+* tensorflow: Model
+* MinMaxScaler: Data normalization
 
 ##### Classes and methods #####
 
