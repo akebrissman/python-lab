@@ -53,14 +53,13 @@ class LocationData:
             self.locations_df.dropna(how="all", inplace=True)
             self.locations_df.dropna(inplace=True)
 
-            # TODO: Jag tror inte man behöver duplicera datat mer syntetiskt data skapat
-            # Duplicera data för att öka datamängden
+            # Om man vill kan man duplicera datat istället för att använda syntetiskt data för att öka datamängden
             # self.locations_df = pd.concat([self.locations_df] * 3, ignore_index=True)
 
             self.features_df = pd.DataFrame(self.locations_df[
                                                 ["Invånare", "Medianinkomst",
-                                                 "Andel lägenheter", "Andel BRF", "Elbilspenetration",
-                                                 "Lägenhetsålder", "Områdestyp", "Tidigt på plats", "Skyltning"]])
+                                                 "Andel lägenheter", "Elbilspenetration",
+                                                 "Lägenhetsålder", "Område", "Tidigt på plats", "Skyltning"]])
             self.target_df = self.locations_df["Rating"]
 
             # self.number_of_rows = len(self.features_df)
@@ -68,7 +67,7 @@ class LocationData:
             self.feature_names = list(self.features_df.columns)
             self.number_of_rows = self.features_df.shape[0]
             self.number_of_features = self.features_df.shape[1]
-            self.number_of_output_categories = len(QualityRating)  # EXCELLENT -- BAD
+            self.number_of_output_categories = len(QualityRating)  # BAD -- EXCELLENT
 
             if len(self.target_df.unique()) < self.number_of_output_categories:
                 print(f"Det finns färre unika labels i datat än de {len(QualityRating)} som stöds")
@@ -91,12 +90,12 @@ class LocationData:
 
             # Olika features är av olika typer och bör normaliseras på olika sätt.
             numerical_columns = ['Invånare', 'Medianinkomst']
-            percentage_columns = ['Andel lägenheter', 'Andel BRF', 'Elbilspenetration']
-            category_columns = ['Lägenhetsålder', 'Områdestyp', 'Tidigt på plats', 'Skyltning']
+            percentage_columns = ['Andel lägenheter', 'Elbilspenetration']
+            category_columns = ['Lägenhetsålder', 'Område', 'Tidigt på plats', 'Skyltning']
 
             # Normalisera numeriska features mellan 0 och 1
             self.features_df[numerical_columns] = self.scaler.fit_transform(self.features_df[numerical_columns])
-            # TODO: Om man behöver vikta en kolumn högre så  multiplicera kolumnvärdet med en vikt-faktor
+            # TODO: Om man behöver vikta en kolumn högre så multiplicera kolumnvärdet med en vikt-faktor
             # X_train[:, feature_index] *= self.weight_factor
             # self.features_df[['Invånare']] *= 2
 
@@ -166,7 +165,6 @@ class LocationData:
                     # Procentuella värden
                     synthetic_row['Andel lägenheter'] = round(
                         min(1, max(0, row['Andel lägenheter'] + np.random.normal(0, 0.05))), 2)
-                    synthetic_row['Andel BRF'] = round(min(1, max(0, row['Andel BRF'] + np.random.normal(0, 0.05))), 2)
                     synthetic_row['Elbilspenetration'] = round(
                         min(1, max(0, row['Elbilspenetration'] + np.random.normal(0, 0.05))), 2)
 
@@ -200,7 +198,6 @@ class UserData:
     def __init__(self):
         self.people = 0
         self.apartments = 0
-        self.brf = 0
         self.apartment_age = 0
         self.mean_income = 0
         self.area_type = 0
@@ -247,17 +244,6 @@ class UserData:
 
         while True:
             try:
-                value = int(input(f"Andel BRF %: (0-100): "))
-                if 0 <= value <= 100:
-                    self.brf = value / 100
-                    break
-                else:
-                    print("Ange ett nummer mellan 0 och 100.")
-            except ValueError:
-                print("Ange ett giltigt nummer!")
-
-        while True:
-            try:
                 value = int(input(f"EV pen %: (0-100): "))
                 if 0 <= value <= 100:
                     self.ev_penetration = value / 100
@@ -282,7 +268,7 @@ class UserData:
 
         while True:
             try:
-                value = int(input(f"Områdestyp: (1-5): "))
+                value = int(input(f"Område: (1-5): "))
                 if 1 <= value <= 5:
                     self.area_type = value
                     break
@@ -534,7 +520,7 @@ class ClassificationModel:
     def predict(self, user_preferences: UserData):
         # TODO: Skapa en array med alla värden från user_preferences
         # data_to_predict = np.array(
-        #     [[user_preferences.people, user_preferences.apartments, user_preferences.brf,
+        #     [[user_preferences.people, user_preferences.apartments,
         #       user_preferences.apartment_age, user_preferences.mean_income, user_preferences.area_type,
         #       user_preferences.early, user_preferences.ev_penetration, user_preferences.sign]])
 
@@ -542,24 +528,22 @@ class ClassificationModel:
             data_to_predict = pd.DataFrame()
             data_to_predict['Invånare'] = [user_preferences.people]
             data_to_predict['Andel lägenheter'] = [user_preferences.apartments]
-            data_to_predict['Andel BRF'] = [user_preferences.brf]
             data_to_predict['Lägenhetsålder'] = [user_preferences.apartment_age]
             data_to_predict['Medianinkomst'] = [user_preferences.mean_income]
-            data_to_predict['Områdestyp'] = [user_preferences.area_type]
+            data_to_predict['Område'] = [user_preferences.area_type]
             data_to_predict['Tidigt på plats'] = [user_preferences.early]
             data_to_predict['Elbilspenetration'] = [user_preferences.ev_penetration]
             data_to_predict['Skyltning'] = [user_preferences.sign]
 
             # Olika features är av olika typer och bör normaliseras på olika sätt.
             numerical_columns = ['Invånare', 'Medianinkomst']
-            percentage_columns = ['Andel lägenheter', 'Andel BRF', 'Elbilspenetration']
-            category_columns = ['Lägenhetsålder', 'Områdestyp', 'Tidigt på plats', 'Skyltning']
+            percentage_columns = ['Andel lägenheter', 'Elbilspenetration']
+            category_columns = ['Lägenhetsålder', 'Område', 'Tidigt på plats', 'Skyltning']
 
             # Normalisera numeriska features (skalas ner till mellan 0 och 1)
             data_to_predict[numerical_columns] = self.scaler.fit_transform(data_to_predict[numerical_columns])
 
-            # Normalisera procentuella features
-            # Andel Lägenheter, Andel BRF osv  ligger redan mellan 0-1
+            # Normalisera procentuella features (Andel Lägenheter bör redan ligga mellan 0-1)
             data_to_predict[percentage_columns] = data_to_predict[percentage_columns].clip(0, 1)
 
             # Normalisera diskreta kategorier med One-hot encode
@@ -576,8 +560,8 @@ class ClassificationModel:
             # Ordna kolumnerna i samma ordning som träningsdata
             data_to_predict = data_to_predict[self.trained_columns]
 
-            # normalized_data = self.scaler.transform(data_to_predict)
             predictions = self.model.predict(data_to_predict)
+
             return QualityRating(np.argmax(predictions))  # Index with the highest value is the enum value
         except Exception as e:
             print(f"Fel vid klassificering: {e}")
