@@ -96,6 +96,9 @@ class LocationData:
 
             # Normalisera numeriska features mellan 0 och 1
             self.features_df[numerical_columns] = self.scaler.fit_transform(self.features_df[numerical_columns])
+            # TODO: Om man behöver vikta en kolumn högre så  multiplicera kolumnvärdet med en vikt-faktor
+            # X_train[:, feature_index] *= self.weight_factor
+            # self.features_df[['Invånare']] *= 2
 
             # Normalisera procentuella features (bör redan ligga mellan 0-1)
             self.features_df[percentage_columns] = self.features_df[percentage_columns].clip(0, 1)
@@ -339,14 +342,12 @@ class ClassificationModel:
         # igen mönster.
 
         # TODO: Hur vet jag hur många neuroner (units) jag skall använda på mina lager?
-        #   Hur vet jag hur många lager jag skall ha?
         #   Utvärdera keras_tuner
-        #   Testa att lägga till ett Dropout lager innan sista output layer.
-        #   Testa  med olika lagerdjup och antal neuroner
+        #   Done - Testa att lägga till ett Dropout lager innan sista output layer.
+        #   Done - Testa  med olika lagerdjup och antal neuroner
         #   Testa att inkludera BatchNormalization efter Dense-lager för stabilare inlärning.
         #   Testa att utöka metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()]
-
-        layers = []
+        #   Testa Attention mechanism för en feature
 
         try:
             # self.model = tf.keras.models.Sequential([
@@ -356,9 +357,30 @@ class ClassificationModel:
             #     # tf.keras.layers.Dropout(0.5),
             #     tf.keras.layers.Dense(units=self.location_data.number_of_output_categories, activation='softmax', ),
             # ])
-            layers.append(tf.keras.layers.Input(shape=(self.location_data.number_of_features,)))
+
+            # TODO: Testa FeatureAttention för att vikta vissa features högre
+            # class FeatureAttention(tf.keras.layers.Layer):
+            #     def __init__(self, input_dim):
+            #         super(FeatureAttention, self).__init__()
+            #         self.attention_weights = tf.keras.layers.Dense(input_dim, activation='softmax')
+            #
+            #     def call(self, inputs):
+            #         weights = self.attention_weights(inputs)
+            #         return inputs * weights
+            #
+            # input_layer = tf.keras.layers.Input(shape=(self.location_data.number_of_features,))
+            # attention = FeatureAttention(self.location_data.number_of_features)(input_layer)
+            # dense_1 = tf.keras.layers.Dense(10, activation='relu')(attention)
+            # output_layer = tf.keras.layers.Dense(self.location_data.number_of_output_categories, activation='softmax')
+            # (dense_1)
+            #
+            # model = tf.keras.Model(inputs=input_layer, outputs=output_layer)
+
+            print(f"Input features columns: {self.location_data.number_of_features}, "
+                  f"Output categories: {self.location_data.number_of_output_categories}")
+            layers = [tf.keras.layers.Input(shape=(self.location_data.number_of_features,))]
             for i in range(number_of_dence_layers):
-                layers.append(tf.keras.layers.Dense(units=10, activation='relu'))
+                layers.append(tf.keras.layers.Dense(units=20, activation='relu'))
             if use_dropout_layer:
                 layers.append(tf.keras.layers.Dropout(0.5))
             layers.append(tf.keras.layers.Dense(units=self.location_data.number_of_output_categories,
@@ -366,7 +388,6 @@ class ClassificationModel:
 
             self.model = tf.keras.models.Sequential(layers)
 
-            # TODO: undersök om jag skall ha fler metrics
             self.model.compile(optimizer='adam',
                                loss='categorical_crossentropy',
                                metrics=['accuracy'])
@@ -510,7 +531,7 @@ class ClassificationModel:
         except Exception as e:
             print(f"Fel vid utvärdering av modell: {e}")
 
-    def rate(self, user_preferences: UserData):
+    def predict(self, user_preferences: UserData):
         # TODO: Skapa en array med alla värden från user_preferences
         # data_to_predict = np.array(
         #     [[user_preferences.people, user_preferences.apartments, user_preferences.brf,
@@ -539,6 +560,7 @@ class ClassificationModel:
 
             # Normalisera procentuella features
             # Andel Lägenheter, Andel BRF osv  ligger redan mellan 0-1
+            data_to_predict[percentage_columns] = data_to_predict[percentage_columns].clip(0, 1)
 
             # Normalisera diskreta kategorier med One-hot encode
             data_to_predict = pd.get_dummies(data_to_predict,
@@ -626,7 +648,7 @@ class UserInterface:
         while True:
             try:
                 self.user_data.get_user_input(self.location_data.feature_names)
-                rating = self.rating_model.rate(self.user_data)
+                rating = self.rating_model.predict(self.user_data)
                 print(rating.name)
             except Exception as e:
                 print(f"Fel vid inmatning av data: {e}")

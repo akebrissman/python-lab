@@ -89,7 +89,7 @@ See: https://www.tensorflow.org/api_docs/python/tf/keras/Sequential
     * `load()`
     * `preprocess()`
 2. `UserData`
-    * Handles user input of location data to rate
+    * Handles user input of location data to rate (predict)
     * `get_user_input()`
 3. `ClassificationModel`
     * `setup()`: Create the model and compile it 
@@ -98,7 +98,7 @@ See: https://www.tensorflow.org/api_docs/python/tf/keras/Sequential
     * `load()`: Load a stored model
     * `evaluation_graph()`: Display accurate/loss graphs
     * `evaluate()`: Evaluate the training result
-    * `rate()`: Generate the prediction base on user input 
+    * `predict()`: Generate the prediction base on user input 
 4. `UserInterface`
     * `main_menu()`: Displays the menu items 
     * `user_input()`: Prompt user for location values
