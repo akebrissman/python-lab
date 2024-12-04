@@ -11,7 +11,7 @@ There are two distinct parts:
 2. Predict. A stored model can be loaded, and by entering new location data it can predict (classify) the new location as bad, poor, fair, good or excellent. 
 
 ### Functionality
-When running the application main.py you will get a command line interface from where you 
+When running the application **main.py** you will get a command line interface from where you 
 can select different options. Only the options which are allowed, at the given time, will be displayed.
 
 _Note: When loading data (option1.) it is recommended to also create synthetic data by entering 1s._ 
@@ -30,7 +30,7 @@ Functions
 
 ### Setup
       # Install dependencies 
-      cd python-lab/projects/project1
+      cd python-lab/projects/Project1
       python -m venv venv
       source venv/bin/activate
       # venv/Scripts/activate
